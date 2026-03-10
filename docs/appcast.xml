@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Whitecat</title>
+        <item>
+            <title>0.1.0</title>
+            <pubDate>Wed, 11 Mar 2026 00:51:40 +0800</pubDate>
+            <sparkle:version>1</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.0/Whitecat-0.1.0.zip" length="1449750" type="application/octet-stream" sparkle:edSignature="hHN2HnPjTYW8lqj8x9JFNkZta9NKATrRCQLYX5Lmk+bTlw17uLiXXVDmSBaibR+MvIJYu6hat9KfN0Pu+A6lBg=="/>
+        </item>
+    </channel>
+</rss>
