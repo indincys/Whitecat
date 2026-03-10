@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
     private let secretStore: SecretStoring
     private let updateChecker: ManualUpdateChecker
     private let sparkleUpdateDriver: SparkleUpdateDriver?
+    private let updateInstallationMode: UpdateInstallationMode
     private var autosaveTask: Task<Void, Never>?
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
     private var storageRootURL: URL?
@@ -38,13 +39,15 @@ final class AppModel: ObservableObject {
         organizer: NoteOrganizer,
         secretStore: SecretStoring,
         updateChecker: ManualUpdateChecker = ManualUpdateChecker(),
-        sparkleUpdateDriver: SparkleUpdateDriver? = nil
+        sparkleUpdateDriver: SparkleUpdateDriver? = nil,
+        updateInstallationMode: UpdateInstallationMode = UpdateInstallationInspector.current()
     ) {
         self.persistence = persistence
         self.organizer = organizer
         self.secretStore = secretStore
         self.updateChecker = updateChecker
         self.sparkleUpdateDriver = sparkleUpdateDriver
+        self.updateInstallationMode = updateInstallationMode
     }
 
     var filteredNotes: [NoteRecord] {
@@ -67,6 +70,17 @@ final class AppModel: ObservableObject {
 
     var activeProfile: AIProfileRecord? {
         snapshot.activeProfile()
+    }
+
+    var supportsInAppUpdateInstallation: Bool {
+        updateInstallationMode.supportsInAppInstallation
+    }
+
+    var updateInstallationMessage: String? {
+        if case let .downloadOnly(reason) = updateInstallationMode {
+            return reason
+        }
+        return nil
     }
 
     func bootstrap() async {
@@ -266,7 +280,9 @@ final class AppModel: ObservableObject {
         let currentVersion = currentVersionString
         updateState = .checking
 
-        if let sparkleUpdateDriver, !feedURL.isEmpty {
+        if updateInstallationMode.supportsInAppInstallation,
+           let sparkleUpdateDriver,
+           !feedURL.isEmpty {
             sparkleUpdateDriver.configure(
                 feedURLString: feedURL,
                 automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
@@ -282,8 +298,14 @@ final class AppModel: ObservableObject {
             switch result {
             case .noUpdate:
                 updateState = .upToDate
+                if let updateInstallationMessage {
+                    lastOperationMessage = updateInstallationMessage
+                }
             case let .updateAvailable(release):
                 updateState = .available(release)
+                if let updateInstallationMessage {
+                    lastOperationMessage = updateInstallationMessage
+                }
             }
         } catch {
             updateState = .failed(error.localizedDescription)

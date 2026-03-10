@@ -205,6 +205,11 @@ struct SettingsView: View {
             }
 
             Section("检查更新") {
+                if let message = model.updateInstallationMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+
                 HStack {
                     Button("检查更新") {
                         Task {
@@ -230,6 +235,11 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("发现新版本 \(release.shortVersion)", systemImage: "arrow.down.circle.fill")
                             .foregroundStyle(.orange)
+                        if !model.supportsInAppUpdateInstallation {
+                            Text("当前构建只支持跳转下载，不支持应用内直接安装。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Button("下载更新") {
                             model.openUpdateDownload(release)
                         }
