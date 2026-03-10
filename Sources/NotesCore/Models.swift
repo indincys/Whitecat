@@ -141,12 +141,23 @@ public struct TagRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
 }
 
 public struct AIProfileRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
+    public static let defaultOrganizationPrompt = """
+    按照 Whitecat 的整理方式处理这条笔记：
+    1. 优先概括正文真实主题，不要套模板。
+    2. 标题简洁、明确，适合在列表里快速扫读。
+    3. category 只保留一个最核心的大类。
+    4. tags 只保留高价值关键词，避免泛标签和重复标签。
+    5. folderName 表示最适合收纳这条笔记的单层文件夹，尽量复用已有文件夹。
+    6. 如果正文是临时想法、待办、记录，请按内容语义整理，不要一律归到同一个文件夹。
+    """
+
     public var id: UUID
     public var displayName: String
     public var providerKind: ProviderKind
     public var baseURL: String
     public var model: String
     public var requestPath: String
+    public var organizationPrompt: String
     public var isActive: Bool
     public var createdAt: Date
     public var updatedAt: Date
@@ -158,6 +169,7 @@ public struct AIProfileRecord: Identifiable, Codable, Equatable, Hashable, Senda
         baseURL: String,
         model: String,
         requestPath: String = "/chat/completions",
+        organizationPrompt: String = AIProfileRecord.defaultOrganizationPrompt,
         isActive: Bool = false,
         createdAt: Date = .now,
         updatedAt: Date = .now
@@ -168,6 +180,7 @@ public struct AIProfileRecord: Identifiable, Codable, Equatable, Hashable, Senda
         self.baseURL = baseURL
         self.model = model
         self.requestPath = requestPath
+        self.organizationPrompt = organizationPrompt
         self.isActive = isActive
         self.createdAt = createdAt
         self.updatedAt = updatedAt
@@ -184,6 +197,52 @@ public struct AIProfileRecord: Identifiable, Codable, Equatable, Hashable, Senda
     public var trimmedRequestPath: String {
         let trimmed = requestPath.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "/chat/completions" : trimmed
+    }
+
+    public var trimmedOrganizationPrompt: String {
+        let trimmed = organizationPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? Self.defaultOrganizationPrompt : trimmed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName
+        case providerKind
+        case baseURL
+        case model
+        case requestPath
+        case organizationPrompt
+        case isActive
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        providerKind = try container.decode(ProviderKind.self, forKey: .providerKind)
+        baseURL = try container.decode(String.self, forKey: .baseURL)
+        model = try container.decode(String.self, forKey: .model)
+        requestPath = try container.decodeIfPresent(String.self, forKey: .requestPath) ?? "/chat/completions"
+        organizationPrompt = try container.decodeIfPresent(String.self, forKey: .organizationPrompt) ?? Self.defaultOrganizationPrompt
+        isActive = try container.decode(Bool.self, forKey: .isActive)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(providerKind, forKey: .providerKind)
+        try container.encode(baseURL, forKey: .baseURL)
+        try container.encode(model, forKey: .model)
+        try container.encode(requestPath, forKey: .requestPath)
+        try container.encode(trimmedOrganizationPrompt, forKey: .organizationPrompt)
+        try container.encode(isActive, forKey: .isActive)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 }
 

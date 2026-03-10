@@ -29,6 +29,30 @@ func adapterBuildsExpectedRequest() throws {
     #expect(bodyString.contains("整理这段正文"))
 }
 
+@Test("自定义提示词会进入模型请求")
+func adapterIncludesCustomOrganizationPrompt() throws {
+    let adapter = OpenAICompatibleAdapter()
+    let profile = AIProfileRecord(
+        displayName: "OpenAI",
+        providerKind: .openAI,
+        baseURL: "https://api.example.com/v1",
+        model: "gpt-test",
+        requestPath: "/chat/completions",
+        organizationPrompt: "标题要更像行动摘要，标签最多 3 个。",
+        isActive: true
+    )
+    let request = try adapter.buildURLRequest(
+        for: OrganizationRequest(noteBody: "周四和设计团队讨论 Whitecat 快速记录窗口。", existingFolders: ["产品"], existingTags: ["会议"]),
+        profile: profile,
+        apiKey: "secret"
+    )
+
+    let payload = try #require(request.httpBody)
+    let bodyString = try #require(String(data: payload, encoding: .utf8))
+    #expect(bodyString.contains("标题要更像行动摘要"))
+    #expect(bodyString.contains("标签最多 3 个"))
+}
+
 @Test("模型返回 fenced json 也能解析")
 func adapterParsesFencedJSON() throws {
     let content = """

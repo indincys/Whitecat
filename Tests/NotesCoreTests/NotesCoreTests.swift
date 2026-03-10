@@ -62,3 +62,26 @@ func retryPlannerUsesExponentialBackoff() {
     #expect(RetryPlanner.nextRetryDate(afterAttempt: 2, now: now).timeIntervalSince(now) == 120)
     #expect(RetryPlanner.nextRetryDate(afterAttempt: 10, now: now).timeIntervalSince(now) == 3600)
 }
+
+@Test("旧配置缺少提示词字段时会回填默认提示词")
+func profileDecodingBackfillsDefaultPrompt() throws {
+    let json = """
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "displayName": "OpenAI",
+      "providerKind": "openai",
+      "baseURL": "https://api.openai.com/v1",
+      "model": "gpt-4.1-mini",
+      "requestPath": "/chat/completions",
+      "isActive": true,
+      "createdAt": "2026-03-10T00:00:00Z",
+      "updatedAt": "2026-03-10T00:00:00Z"
+    }
+    """
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let profile = try decoder.decode(AIProfileRecord.self, from: Data(json.utf8))
+
+    #expect(profile.trimmedOrganizationPrompt == AIProfileRecord.defaultOrganizationPrompt)
+}

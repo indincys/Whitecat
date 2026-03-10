@@ -10,18 +10,32 @@ struct WhitecatApp: App {
         updateChecker: ManualUpdateChecker(),
         sparkleUpdateDriver: SparkleUpdateDriver()
     )
+    @StateObject private var quickCaptureController = QuickCaptureController()
 
     var body: some Scene {
         WindowGroup("Whitecat") {
             ContentView()
                 .environmentObject(model)
+                .environmentObject(quickCaptureController)
                 .frame(minWidth: 1180, minHeight: 720)
+                .task {
+                    quickCaptureController.configure(model: model)
+                }
         }
         .defaultSize(width: 1320, height: 820)
+        .commands {
+            CommandMenu("Capture") {
+                Button("快速收集") {
+                    quickCaptureController.show()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+            }
+        }
 
         Settings {
             SettingsView()
                 .environmentObject(model)
+                .environmentObject(quickCaptureController)
         }
     }
 }

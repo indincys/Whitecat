@@ -5,6 +5,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var quickCaptureController: QuickCaptureController
     @State private var selectedProfileID: UUID?
     @State private var apiKeyDraft: String = ""
     @State private var appcastURLDraft: String = ""
@@ -15,6 +16,8 @@ struct SettingsView: View {
         TabView {
             modelSettingsTab
                 .tabItem { Label("模型", systemImage: "sparkles") }
+            captureSettingsTab
+                .tabItem { Label("快速收集", systemImage: "keyboard") }
             updateSettingsTab
                 .tabItem { Label("更新", systemImage: "arrow.down.app") }
         }
@@ -105,6 +108,36 @@ struct SettingsView: View {
                             "请求路径",
                             text: binding(for: selectedProfile, keyPath: \.requestPath, defaultValue: selectedProfile.requestPath)
                         )
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("整理提示词")
+                                    .font(.headline)
+                                Spacer()
+                                Button("恢复默认提示词") {
+                                    var draft = selectedProfile
+                                    draft.organizationPrompt = AIProfileRecord.defaultOrganizationPrompt
+                                    draft.updatedAt = .now
+                                    model.updateProfile(draft)
+                                }
+                            }
+
+                            Text("这里写你希望模型遵守的整理规则，例如标题风格、分类方式、标签数量和文件夹偏好。")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            TextEditor(
+                                text: binding(
+                                    for: selectedProfile,
+                                    keyPath: \.organizationPrompt,
+                                    defaultValue: selectedProfile.organizationPrompt
+                                )
+                            )
+                            .font(.system(size: 13))
+                            .frame(minHeight: 180)
+                            .padding(10)
+                            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+
                         SecureField("API Key", text: $apiKeyDraft)
                             .textFieldStyle(.roundedBorder)
                         Toggle("设为当前整理模型", isOn: Binding(
@@ -133,6 +166,27 @@ struct SettingsView: View {
                 ContentUnavailableView("暂无模型配置", systemImage: "tray")
             }
         }
+    }
+
+    private var captureSettingsTab: some View {
+        Form {
+            Section("快捷键") {
+                Text("全局快捷键：\(QuickCaptureController.shortcutDisplay)")
+                Text("应用运行时可用。触发后只弹出一个正文输入小窗，不会打开主窗口。")
+                    .foregroundStyle(.secondary)
+                Button("打开快速收集窗口") {
+                    quickCaptureController.show()
+                }
+            }
+
+            Section("使用方式") {
+                Text("小窗口里只保留正文输入。")
+                Text("按 Command-Enter 立即保存为新笔记。")
+                Text("按 Esc 直接关闭，不保存空内容。")
+            }
+        }
+        .formStyle(.grouped)
+        .padding(24)
     }
 
     private var updateSettingsTab: some View {

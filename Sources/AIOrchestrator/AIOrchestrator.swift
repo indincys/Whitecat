@@ -208,8 +208,8 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let prompt = """
-        你是 Whitecat 笔记整理模型。请严格返回 JSON，不要解释，不要 Markdown。
+        let systemPrompt = """
+        你是 Whitecat 笔记整理模型。你必须只输出 JSON，不要解释，不要 Markdown，不要多余文本。
         输出字段必须是:
         {
           "title": "20字以内的中文标题",
@@ -217,15 +217,23 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
           "tags": ["不超过5个标签"],
           "folderName": "一个单层文件夹名"
         }
-        规则:
+        基础规则:
         1. 标题简洁，能概括正文。
         2. category 是单个主分类。
         3. tags 只保留高价值标签。
         4. folderName 必须是单层目录名，不允许斜杠。
         5. 如果已有文件夹适合，优先复用已有文件夹。
         6. 所有输出使用中文，除非正文内容明显要求保留英文名词。
+
+        用户自定义整理要求:
+        \(profile.trimmedOrganizationPrompt)
+        """
+
+        let prompt = """
+        请根据这条笔记生成结构化整理结果。
         已有文件夹: \(request.existingFolders.joined(separator: "、"))
         已有标签: \(request.existingTags.joined(separator: "、"))
+
         正文:
         \(request.noteBody)
         """
@@ -235,7 +243,7 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
             temperature: 0.2,
             responseFormat: ResponseFormat(type: "json_object"),
             messages: [
-                .init(role: "system", content: "你是一个只输出 JSON 的中文笔记整理助手。"),
+                .init(role: "system", content: systemPrompt),
                 .init(role: "user", content: prompt)
             ]
         )

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var quickCaptureController: QuickCaptureController
     @Environment(\.scenePhase) private var scenePhase
     @State private var editorShouldFocus = false
 
@@ -110,6 +111,13 @@ struct ContentView: View {
                 } label: {
                     Label("新建笔记", systemImage: "square.and.pencil")
                 }
+
+                Button {
+                    quickCaptureController.show()
+                } label: {
+                    Label("快速收集", systemImage: "bolt.badge.clock")
+                }
+                .help("快速收集（\(QuickCaptureController.shortcutDisplay)）")
 
                 Button {
                     model.deleteSelectedNote()

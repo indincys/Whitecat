@@ -105,6 +105,18 @@ final class AppModel: ObservableObject {
         scheduleAutosave(immediate: true)
     }
 
+    func saveQuickCaptureNote(body: String) async {
+        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBody.isEmpty else { return }
+
+        let noteID = snapshot.insertDraftNote()
+        snapshot.updateNote(id: noteID) {
+            $0.updateBody(trimmedBody)
+        }
+        scheduleAutosave(immediate: true)
+        await organizeIfNeeded(noteID: noteID, overwriteManualMetadata: false)
+    }
+
     func deleteSelectedNote() {
         guard let selectedNoteID else { return }
         snapshot.deleteNote(id: selectedNoteID)
