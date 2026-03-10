@@ -22,6 +22,11 @@ SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-}"
 INFO_TEMPLATE="$ROOT_DIR/Configs/Info.plist.template"
 SPARKLE_FRAMEWORK="$ROOT_DIR/Vendor/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+USE_HARDENED_RUNTIME=1
+
+if [[ "$SIGNING_IDENTITY" == "-" ]]; then
+  USE_HARDENED_RUNTIME=0
+fi
 
 mkdir -p "$OUTPUT_DIR" "$RELEASES_DIR" "$SWIFT_CACHE_DIR" "$CLANG_CACHE_DIR"
 rm -rf "$APP_DIR"
@@ -46,6 +51,12 @@ mkdir -p \
 cp "$BIN_PATH/WhitecatApp" "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 cp -R "$SPARKLE_FRAMEWORK" "$APP_DIR/Contents/Frameworks/"
 
+# SwiftPM-linked binaries don't automatically search inside an app bundle's Frameworks directory.
+# Add the standard app-bundle rpath before signing so Sparkle can be resolved at launch.
+if ! otool -l "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME" | grep -q "@executable_path/../Frameworks"; then
+  install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
+fi
+
 INFO_PLIST="$APP_DIR/Contents/Info.plist"
 sed \
   -e "s#__VERSION__#$VERSION#g" \
@@ -57,11 +68,19 @@ sed \
 
 codesign_path() {
   local target="$1"
-  if [[ -n "$ENTITLEMENTS_PATH" && "$target" == "$APP_DIR" ]]; then
-    codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS_PATH" --sign "$SIGNING_IDENTITY" "$target"
-  else
-    codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$target"
+  local codesign_args=(--force --sign "$SIGNING_IDENTITY")
+
+  # Ad-hoc builds are for local use only. Signing them with the hardened runtime
+  # enables library validation, which blocks the embedded Sparkle framework from loading.
+  if [[ "$USE_HARDENED_RUNTIME" -eq 1 ]]; then
+    codesign_args+=(--options runtime --timestamp)
   fi
+
+  if [[ -n "$ENTITLEMENTS_PATH" && "$target" == "$APP_DIR" ]]; then
+    codesign_args+=(--entitlements "$ENTITLEMENTS_PATH")
+  fi
+
+  codesign "${codesign_args[@]}" "$target"
 }
 
 if [[ -d "$APP_DIR/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" ]]; then
