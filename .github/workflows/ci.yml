@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - codex/**
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      CLANG_MODULE_CACHE_PATH: /tmp/whitecat-clang-module-cache
+      SWIFTPM_MODULECACHE_OVERRIDE: /tmp/whitecat-swiftpm-module-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode
+        run: xcodebuild -version
+
+      - name: Run tests
+        run: swift test --disable-sandbox --scratch-path /tmp/whitecat-build

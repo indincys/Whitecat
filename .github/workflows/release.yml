@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+      CLANG_MODULE_CACHE_PATH: /tmp/whitecat-clang-module-cache
+      SWIFTPM_MODULECACHE_OVERRIDE: /tmp/whitecat-swiftpm-module-cache
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalize version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > /tmp/build-cert.p12
+          security import /tmp/build-cert.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+
+      - name: Render entitlements
+        env:
+          TEAM_BUNDLE_PREFIX: ${{ secrets.TEAM_BUNDLE_PREFIX }}
+        run: ./Scripts/render_entitlements.sh
+
+      - name: Run tests
+        run: swift test --disable-sandbox --scratch-path /tmp/whitecat-build
+
+      - name: Package app
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          APPCAST_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/appcast.xml
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          ENTITLEMENTS_PATH: Configs/Whitecat.entitlements
+        run: ./Scripts/package_app.sh
+
+      - name: Notarize ZIP
+        env:
+          APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
+          APPLE_NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
+          APPLE_NOTARY_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_NOTARY_APP_SPECIFIC_PASSWORD }}
+        run: |
+          ZIP_PATH="dist/releases/Whitecat-${VERSION}.zip"
+          xcrun notarytool submit "$ZIP_PATH" \
+            --apple-id "$APPLE_NOTARY_APPLE_ID" \
+            --team-id "$APPLE_NOTARY_TEAM_ID" \
+            --password "$APPLE_NOTARY_APP_SPECIFIC_PASSWORD" \
+            --wait
+
+      - name: Generate appcast
+        env:
+          DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+          PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: ./Scripts/generate_appcast.sh dist/releases
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p dist/site
+          cp dist/releases/appcast.xml dist/site/appcast.xml
+          printf '<!doctype html><html><body><p>Whitecat appcast</p></body></html>' > dist/site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/releases/Whitecat-${{ env.VERSION }}.zip
+            dist/releases/Whitecat-${{ env.VERSION }}.dmg
+            dist/releases/appcast.xml
