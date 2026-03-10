@@ -3,9 +3,19 @@ import Security
 
 public enum UpdateInstallationMode: Equatable, Sendable {
     case sparkle
+    case selfManaged(reason: String)
     case downloadOnly(reason: String)
 
     public var supportsInAppInstallation: Bool {
+        switch self {
+        case .sparkle, .selfManaged:
+            true
+        case .downloadOnly:
+            false
+        }
+    }
+
+    public var usesSparkle: Bool {
         if case .sparkle = self {
             return true
         }
@@ -17,8 +27,8 @@ public enum UpdateInstallationMode: Equatable, Sendable {
             return .sparkle
         }
 
-        return .downloadOnly(
-            reason: "当前 Whitecat 是未使用 Developer ID 正式签名的构建。Sparkle 无法安全安装更新；你仍可在应用内检查新版本并跳转到 GitHub 下载。"
+        return .selfManaged(
+            reason: "当前 Whitecat 没有使用 Developer ID 正式签名。更新将改用内置安装器下载、校验并替换应用，不再走 Sparkle 的签名链。"
         )
     }
 }

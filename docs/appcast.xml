@@ -3,12 +3,12 @@
     <channel>
         <title>Whitecat</title>
         <item>
-            <title>0.1.3</title>
-            <pubDate>Wed, 11 Mar 2026 03:15:21 +0800</pubDate>
-            <sparkle:version>4</sparkle:version>
-            <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
+            <title>0.1.4</title>
+            <pubDate>Wed, 11 Mar 2026 03:56:29 +0800</pubDate>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.3/Whitecat-0.1.3.zip" length="1778424" type="application/octet-stream" sparkle:edSignature="ZanPyMWo7tmEHNsG0NhOs88JrJLqiF4AxgqorEdt3P86RMm4EWv6JyfJqKCMs3QMmYdLOn4JxY/Uj37dlftQBg=="/>
+            <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.4/Whitecat-0.1.4.zip" length="1798570" type="application/octet-stream" sparkle:edSignature="0WRXoy8lDIBZopg0Hi4i/pfwJ28wa7VjcLjdLS2/z7A45nZeNnOz5nZCp+RiEuD9mmAspnpSKh2VceuGt4dwAw=="/>
         </item>
     </channel>
 </rss>

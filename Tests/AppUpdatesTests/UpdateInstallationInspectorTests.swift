@@ -5,16 +5,18 @@ import Testing
 func signedBuildSupportsSparkleInstallation() {
     let mode = UpdateInstallationMode.from(teamIdentifier: "TEAM123456")
     #expect(mode.supportsInAppInstallation)
+    #expect(mode.usesSparkle)
 }
 
-@Test("缺少 Team Identifier 时退回下载模式")
-func unsignedBuildFallsBackToDownloadMode() {
+@Test("缺少 Team Identifier 时切换到内置安装器")
+func unsignedBuildFallsBackToSelfManagedInstaller() {
     let mode = UpdateInstallationMode.from(teamIdentifier: nil)
 
-    #expect(!mode.supportsInAppInstallation)
-    if case let .downloadOnly(reason) = mode {
+    #expect(mode.supportsInAppInstallation)
+    #expect(!mode.usesSparkle)
+    if case let .selfManaged(reason) = mode {
         #expect(reason.contains("Developer ID"))
     } else {
-        Issue.record("Expected downloadOnly mode for unsigned build")
+        Issue.record("Expected selfManaged mode for unsigned build")
     }
 }

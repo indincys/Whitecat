@@ -10,7 +10,7 @@ func appcastParserReadsLatestItem() throws {
         <item>
           <pubDate>Tue, 10 Mar 2026 12:00:00 +0000</pubDate>
           <sparkle:releaseNotesLink>https://example.com/release-notes</sparkle:releaseNotesLink>
-          <enclosure url="https://example.com/Whitecat-1.0.0.zip" sparkle:version="100" sparkle:shortVersionString="1.0.0" />
+          <enclosure url="https://example.com/Whitecat-1.0.0.zip" sparkle:version="100" sparkle:shortVersionString="1.0.0" sparkle:edSignature="abc123" />
         </item>
       </channel>
     </rss>
@@ -23,6 +23,7 @@ func appcastParserReadsLatestItem() throws {
     #expect(items[0].version == "100")
     #expect(items[0].shortVersion == "1.0.0")
     #expect(items[0].url.absoluteString == "https://example.com/Whitecat-1.0.0.zip")
+    #expect(items[0].edSignature == "abc123")
 }
 
 @Test("语义版本比较按分段大小")

@@ -4,6 +4,7 @@ public struct UpdateRelease: Equatable, Hashable, Sendable {
     public var version: SemanticVersion
     public var shortVersion: String
     public var downloadURL: URL
+    public var edSignature: String?
     public var notesURL: URL?
     public var publicationDate: Date?
 
@@ -11,12 +12,14 @@ public struct UpdateRelease: Equatable, Hashable, Sendable {
         version: SemanticVersion,
         shortVersion: String,
         downloadURL: URL,
+        edSignature: String? = nil,
         notesURL: URL? = nil,
         publicationDate: Date? = nil
     ) {
         self.version = version
         self.shortVersion = shortVersion
         self.downloadURL = downloadURL
+        self.edSignature = edSignature
         self.notesURL = notesURL
         self.publicationDate = publicationDate
     }
@@ -65,13 +68,22 @@ public struct AppcastItem: Equatable, Sendable {
     public var version: String
     public var shortVersion: String
     public var url: URL
+    public var edSignature: String?
     public var notesURL: URL?
     public var publicationDate: Date?
 
-    public init(version: String, shortVersion: String, url: URL, notesURL: URL? = nil, publicationDate: Date? = nil) {
+    public init(
+        version: String,
+        shortVersion: String,
+        url: URL,
+        edSignature: String? = nil,
+        notesURL: URL? = nil,
+        publicationDate: Date? = nil
+    ) {
         self.version = version
         self.shortVersion = shortVersion
         self.url = url
+        self.edSignature = edSignature
         self.notesURL = notesURL
         self.publicationDate = publicationDate
     }
@@ -119,6 +131,7 @@ public struct ManualUpdateChecker: Sendable {
                     version: latestVersion,
                     shortVersion: latest.shortVersion,
                     downloadURL: latest.url,
+                    edSignature: latest.edSignature,
                     notesURL: latest.notesURL,
                     publicationDate: latest.publicationDate
                 )
@@ -141,6 +154,7 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
     private var draftVersion: String?
     private var draftShortVersion: String?
     private var draftURL: URL?
+    private var draftEdSignature: String?
     private var draftNotesURL: URL?
     private var draftPublicationDate: Date?
 
@@ -154,11 +168,13 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
             draftVersion = nil
             draftShortVersion = nil
             draftURL = nil
+            draftEdSignature = nil
             draftNotesURL = nil
             draftPublicationDate = nil
         } else if elementName == "enclosure" {
             draftVersion = attributeDict["sparkle:version"] ?? attributeDict["version"]
             draftShortVersion = attributeDict["sparkle:shortVersionString"] ?? attributeDict["shortVersionString"]
+            draftEdSignature = attributeDict["sparkle:edSignature"] ?? attributeDict["edSignature"]
             if let urlValue = attributeDict["url"] {
                 draftURL = URL(string: urlValue)
             }
@@ -194,6 +210,7 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
                     version: draftVersion,
                     shortVersion: draftShortVersion,
                     url: draftURL,
+                    edSignature: draftEdSignature,
                     notesURL: draftNotesURL,
                     publicationDate: draftPublicationDate
                 )

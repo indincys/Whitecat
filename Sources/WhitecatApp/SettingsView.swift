@@ -228,6 +228,8 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 case .checking:
                     ProgressView("正在读取更新源...")
+                case let .installing(message):
+                    ProgressView(message)
                 case .upToDate:
                     Label("当前已是最新版本。", systemImage: "checkmark.seal")
                         .foregroundStyle(.green)
@@ -236,12 +238,18 @@ struct SettingsView: View {
                         Label("发现新版本 \(release.shortVersion)", systemImage: "arrow.down.circle.fill")
                             .foregroundStyle(.orange)
                         if !model.supportsInAppUpdateInstallation {
-                            Text("当前构建只支持跳转下载，不支持应用内直接安装。")
+                            Text("当前构建只支持跳转下载。")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Button("下载更新") {
-                            model.openUpdateDownload(release)
+                        Button(model.supportsInAppUpdateInstallation ? "下载并安装更新" : "下载更新") {
+                            Task {
+                                if model.supportsInAppUpdateInstallation {
+                                    await model.installUpdate(release)
+                                } else {
+                                    model.openUpdateDownload(release)
+                                }
+                            }
                         }
                     }
                 case let .failed(message):

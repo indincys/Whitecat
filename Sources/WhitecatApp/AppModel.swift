@@ -19,6 +19,7 @@ final class AppModel: ObservableObject {
     enum UpdateState: Equatable {
         case idle
         case checking
+        case installing(String)
         case upToDate
         case available(UpdateRelease)
         case failed(String)
@@ -29,6 +30,7 @@ final class AppModel: ObservableObject {
     private let secretStore: SecretStoring
     private let updateChecker: ManualUpdateChecker
     private let sparkleUpdateDriver: SparkleUpdateDriver?
+    private let unsignedUpdateInstaller: UnsignedUpdateInstaller
     private let updateInstallationMode: UpdateInstallationMode
     private var autosaveTask: Task<Void, Never>?
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
@@ -40,6 +42,7 @@ final class AppModel: ObservableObject {
         secretStore: SecretStoring,
         updateChecker: ManualUpdateChecker = ManualUpdateChecker(),
         sparkleUpdateDriver: SparkleUpdateDriver? = nil,
+        unsignedUpdateInstaller: UnsignedUpdateInstaller = UnsignedUpdateInstaller(),
         updateInstallationMode: UpdateInstallationMode = UpdateInstallationInspector.current()
     ) {
         self.persistence = persistence
@@ -47,6 +50,7 @@ final class AppModel: ObservableObject {
         self.secretStore = secretStore
         self.updateChecker = updateChecker
         self.sparkleUpdateDriver = sparkleUpdateDriver
+        self.unsignedUpdateInstaller = unsignedUpdateInstaller
         self.updateInstallationMode = updateInstallationMode
     }
 
@@ -77,10 +81,12 @@ final class AppModel: ObservableObject {
     }
 
     var updateInstallationMessage: String? {
-        if case let .downloadOnly(reason) = updateInstallationMode {
+        switch updateInstallationMode {
+        case let .selfManaged(reason), let .downloadOnly(reason):
             return reason
+        case .sparkle:
+            return nil
         }
-        return nil
     }
 
     func bootstrap() async {
@@ -280,7 +286,7 @@ final class AppModel: ObservableObject {
         let currentVersion = currentVersionString
         updateState = .checking
 
-        if updateInstallationMode.supportsInAppInstallation,
+        if updateInstallationMode.usesSparkle,
            let sparkleUpdateDriver,
            !feedURL.isEmpty {
             sparkleUpdateDriver.configure(
@@ -314,6 +320,39 @@ final class AppModel: ObservableObject {
 
     func openUpdateDownload(_ release: UpdateRelease) {
         NSWorkspace.shared.open(release.downloadURL)
+    }
+
+    func installUpdate(_ release: UpdateRelease) async {
+        switch updateInstallationMode {
+        case .sparkle:
+            updateState = .checking
+            if let sparkleUpdateDriver {
+                sparkleUpdateDriver.configure(
+                    feedURLString: snapshot.preferences.appcastURL,
+                    automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
+                )
+                sparkleUpdateDriver.checkForUpdates()
+                lastOperationMessage = "已发起 Sparkle 安装更新。"
+                updateState = .idle
+            } else {
+                updateState = .failed("当前构建缺少 Sparkle 更新驱动。")
+            }
+
+        case .selfManaged:
+            updateState = .installing("正在下载并校验更新...")
+            do {
+                try await unsignedUpdateInstaller.install(release: release)
+                lastOperationMessage = "更新包已准备完成，应用即将退出并安装新版本。"
+                updateState = .installing("正在安装更新...")
+                NSApp.terminate(nil)
+            } catch {
+                updateState = .failed(error.localizedDescription)
+            }
+
+        case .downloadOnly:
+            openUpdateDownload(release)
+            updateState = .idle
+        }
     }
 
     func openReleasePage() {
