@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ARCHIVES_DIR="${1:-$ROOT_DIR/dist/releases}"
 DOWNLOAD_URL_PREFIX="${DOWNLOAD_URL_PREFIX:-}"
 RELEASE_NOTES_URL_PREFIX="${RELEASE_NOTES_URL_PREFIX:-}"
+FULL_RELEASE_NOTES_URL="${FULL_RELEASE_NOTES_URL:-}"
 PRIVATE_ED_KEY="${PRIVATE_ED_KEY:-}"
 PRIVATE_ED_KEY_PATH="${PRIVATE_ED_KEY_PATH:-}"
 APPCAST_TOOL="${APPCAST_TOOL:-$ROOT_DIR/Vendor/SparkleTools/generate_appcast}"
@@ -38,6 +39,10 @@ ARGS=(
 
 if [[ -n "$RELEASE_NOTES_URL_PREFIX" ]]; then
   ARGS+=(--release-notes-url-prefix "$RELEASE_NOTES_URL_PREFIX")
+fi
+
+if [[ -n "$FULL_RELEASE_NOTES_URL" ]]; then
+  ARGS+=(--full-release-notes-url "$FULL_RELEASE_NOTES_URL")
 fi
 
 for archive in "$ARCHIVES_DIR"/*.zip; do

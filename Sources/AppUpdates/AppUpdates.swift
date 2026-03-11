@@ -112,23 +112,29 @@ public struct ManualUpdateChecker: Sendable {
         self.parser = parser
     }
 
-    public func check(currentVersion: String, feedURLString: String) async throws -> UpdateCheckResult {
+    public func check(
+        currentBuildVersion: String,
+        currentShortVersion: String,
+        feedURLString: String
+    ) async throws -> UpdateCheckResult {
         guard let feedURL = URL(string: feedURLString), !feedURLString.isEmpty else {
             throw UpdateCheckerError.invalidFeedURL
         }
 
         let (data, _) = try await session.data(from: feedURL)
         let items = try parser.parse(data: data)
-        guard let latest = items.max(by: { SemanticVersion($0.version) < SemanticVersion($1.version) }) else {
+        guard let latest = items.max(by: { $0.comparableVersion < $1.comparableVersion }) else {
             throw UpdateCheckerError.malformedAppcast
         }
 
-        let installedVersion = SemanticVersion(currentVersion)
-        let latestVersion = SemanticVersion(latest.version)
-        if latestVersion > installedVersion {
+        let installedVersion = AppcastVersion(
+            shortVersion: currentShortVersion,
+            buildVersion: currentBuildVersion
+        )
+        if latest.comparableVersion > installedVersion {
             return .updateAvailable(
                 UpdateRelease(
-                    version: latestVersion,
+                    version: SemanticVersion(latest.version),
                     shortVersion: latest.shortVersion,
                     downloadURL: latest.url,
                     edSignature: latest.edSignature,
@@ -145,6 +151,8 @@ public struct ManualUpdateChecker: Sendable {
 private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
     private enum Node {
         case none
+        case version
+        case shortVersion
         case pubDate
         case releaseNotesLink
     }
@@ -172,15 +180,27 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
             draftNotesURL = nil
             draftPublicationDate = nil
         } else if elementName == "enclosure" {
-            draftVersion = attributeDict["sparkle:version"] ?? attributeDict["version"]
-            draftShortVersion = attributeDict["sparkle:shortVersionString"] ?? attributeDict["shortVersionString"]
+            if let version = attributeDict["sparkle:version"] ?? attributeDict["version"] {
+                draftVersion = version
+            }
+            if let shortVersion = attributeDict["sparkle:shortVersionString"] ?? attributeDict["shortVersionString"] {
+                draftShortVersion = shortVersion
+            }
             draftEdSignature = attributeDict["sparkle:edSignature"] ?? attributeDict["edSignature"]
             if let urlValue = attributeDict["url"] {
                 draftURL = URL(string: urlValue)
             }
+        } else if elementName == "sparkle:version" || elementName == "version" {
+            currentNode = .version
+        } else if elementName == "sparkle:shortVersionString" || elementName == "shortVersionString" {
+            currentNode = .shortVersion
         } else if elementName == "pubDate" {
             currentNode = .pubDate
-        } else if elementName == "sparkle:releaseNotesLink" || elementName == "releaseNotesLink" {
+        } else if elementName == "sparkle:releaseNotesLink"
+            || elementName == "releaseNotesLink"
+            || elementName == "sparkle:fullReleaseNotesLink"
+            || elementName == "fullReleaseNotesLink"
+        {
             currentNode = .releaseNotesLink
         }
     }
@@ -193,6 +213,10 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
         let trimmed = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
 
         switch currentNode {
+        case .version where !trimmed.isEmpty:
+            draftVersion = trimmed
+        case .shortVersion where !trimmed.isEmpty:
+            draftShortVersion = trimmed
         case .pubDate where !trimmed.isEmpty:
             draftPublicationDate = Self.dateFormatter.date(from: trimmed)
         case .releaseNotesLink where !trimmed.isEmpty:
@@ -201,14 +225,17 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
             break
         }
 
+        let resolvedVersion = draftVersion ?? draftShortVersion
+        let resolvedShortVersion = draftShortVersion ?? draftVersion
+
         if elementName == "item",
-           let draftVersion,
-           let draftShortVersion,
+           let resolvedVersion,
+           let resolvedShortVersion,
            let draftURL {
             items.append(
                 AppcastItem(
-                    version: draftVersion,
-                    shortVersion: draftShortVersion,
+                    version: resolvedVersion,
+                    shortVersion: resolvedShortVersion,
                     url: draftURL,
                     edSignature: draftEdSignature,
                     notesURL: draftNotesURL,
@@ -227,4 +254,27 @@ private final class AppcastXMLDelegate: NSObject, XMLParserDelegate {
         formatter.dateFormat = "E, dd MMM yyyy HH:mm:ss Z"
         return formatter
     }()
+}
+
+private struct AppcastVersion: Comparable, Sendable {
+    let shortVersion: SemanticVersion
+    let buildVersion: SemanticVersion
+
+    init(shortVersion: String, buildVersion: String) {
+        self.shortVersion = SemanticVersion(shortVersion)
+        self.buildVersion = SemanticVersion(buildVersion)
+    }
+
+    static func < (lhs: AppcastVersion, rhs: AppcastVersion) -> Bool {
+        if lhs.shortVersion != rhs.shortVersion {
+            return lhs.shortVersion < rhs.shortVersion
+        }
+        return lhs.buildVersion < rhs.buildVersion
+    }
+}
+
+private extension AppcastItem {
+    var comparableVersion: AppcastVersion {
+        AppcastVersion(shortVersion: shortVersion, buildVersion: version)
+    }
 }

@@ -102,6 +102,7 @@ final class AppModel: ObservableObject {
                 loadedSnapshot.preferences.releasePageURL = AppPreferenceRecord.defaultReleasePageURL
             }
             snapshot = loadedSnapshot
+            configureSparkleUpdater()
 
             if let firstNote = filteredNotes.first {
                 selectedNoteID = firstNote.id
@@ -300,7 +301,11 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let result = try await checker.check(currentVersion: currentVersion, feedURLString: feedURL)
+            let result = try await checker.check(
+                currentBuildVersion: currentBuildVersion,
+                currentShortVersion: currentVersion,
+                feedURLString: feedURL
+            )
             switch result {
             case .noUpdate:
                 updateState = .upToDate
@@ -366,6 +371,7 @@ final class AppModel: ObservableObject {
             $0.releasePageURL = releasePageURL
             $0.checksForUpdatesAutomatically = checksForUpdatesAutomatically
         }
+        configureSparkleUpdater()
         scheduleAutosave(immediate: true)
     }
 
@@ -405,6 +411,17 @@ final class AppModel: ObservableObject {
 
     private var currentVersionString: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+    }
+
+    private var currentBuildVersion: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? currentVersionString
+    }
+
+    private func configureSparkleUpdater() {
+        sparkleUpdateDriver?.configure(
+            feedURLString: snapshot.preferences.appcastURL,
+            automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
+        )
     }
 
     func organizeIfNeeded(noteID: UUID, overwriteManualMetadata: Bool) async {

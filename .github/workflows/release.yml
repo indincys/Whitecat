@@ -69,14 +69,27 @@ jobs:
       - name: Generate appcast
         env:
           DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+          FULL_RELEASE_NOTES_URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
           PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
         run: ./Scripts/generate_appcast.sh dist/releases
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/releases/Whitecat-${{ env.VERSION }}.zip
+            dist/releases/Whitecat-${{ env.VERSION }}.dmg
+            dist/releases/appcast.xml
 
       - name: Prepare Pages artifact
         run: |
           mkdir -p dist/site
           cp dist/releases/appcast.xml dist/site/appcast.xml
-          printf '<!doctype html><html><body><p>Whitecat appcast</p></body></html>' > dist/site/index.html
+          if [[ -f docs/index.html ]]; then
+            cp docs/index.html dist/site/index.html
+          else
+            printf '<!doctype html><html><body><p>Whitecat appcast</p></body></html>' > dist/site/index.html
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
@@ -86,11 +99,3 @@ jobs:
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/releases/Whitecat-${{ env.VERSION }}.zip
-            dist/releases/Whitecat-${{ env.VERSION }}.dmg
-            dist/releases/appcast.xml

@@ -33,9 +33,17 @@ ENTITLEMENTS_PATH=Configs/Whitecat.entitlements \
 ./Scripts/package_app.sh
 
 DOWNLOAD_URL_PREFIX=https://github.com/YOUR_NAME/Whitecat/releases/download/v0.1.0 \
+FULL_RELEASE_NOTES_URL=https://github.com/YOUR_NAME/Whitecat/releases/tag/v0.1.0 \
 PRIVATE_ED_KEY=YOUR_PRIVATE_KEY \
 ./Scripts/generate_appcast.sh dist/releases
 ```
+
+## 更新链路
+
+- GitHub Pages 托管 `appcast.xml`，这是 app 内检查更新读取的更新源。
+- GitHub Releases 托管 `Whitecat-<version>.zip`，这是 Sparkle 或内置安装器直接下载的安装包。
+- GitHub Release 页面只作为版本说明入口，不是主安装路径。
+- 发布顺序要保证先有 Release 资产，再发布新的 `appcast.xml`，否则客户端可能先读到新版本但下载地址还没准备好。
 
 ## GitHub Actions 约定的 Secrets
 
