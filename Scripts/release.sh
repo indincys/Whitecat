@@ -249,7 +249,12 @@ commit_feed_if_needed() {
     return
   fi
 
-  git add -A "$DOCS_APPCAST_PATH" "$DOCS_OLD_UPDATES_PATH"
+  local add_paths=("$DOCS_APPCAST_PATH")
+  if [[ -e "$DOCS_OLD_UPDATES_PATH" ]] || git ls-files -- "$DOCS_OLD_UPDATES_PATH" | grep -q .; then
+    add_paths+=("$DOCS_OLD_UPDATES_PATH")
+  fi
+
+  git add -A "${add_paths[@]}"
   git commit -m "Update appcast for $TAG_NAME"
 }
 
