@@ -102,10 +102,7 @@ codesign_path "$APP_DIR"
 
 ZIP_PATH="$RELEASES_DIR/${APP_NAME}-${VERSION}.zip"
 DMG_PATH="$RELEASES_DIR/${APP_NAME}-${VERSION}.dmg"
-rm -f "$ZIP_PATH" "$DMG_PATH"
-
-ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$ZIP_PATH"
-hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
+VERSION="$VERSION" OUTPUT_DIR="$OUTPUT_DIR" "$ROOT_DIR/Scripts/archive_app.sh"
 
 echo "App bundle: $APP_DIR"
 echo "ZIP: $ZIP_PATH"
