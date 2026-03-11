@@ -17,6 +17,7 @@ struct WhitecatApp: App {
             ContentView()
                 .environmentObject(model)
                 .environmentObject(quickCaptureController)
+                .preferredColorScheme(model.preferredColorScheme)
                 .frame(minWidth: 1180, minHeight: 720)
                 .task {
                     quickCaptureController.configure(model: model)
@@ -36,6 +37,7 @@ struct WhitecatApp: App {
             SettingsView()
                 .environmentObject(model)
                 .environmentObject(quickCaptureController)
+                .preferredColorScheme(model.preferredColorScheme)
         }
     }
 }

@@ -89,6 +89,14 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var appearancePreference: AppAppearancePreference {
+        snapshot.preferences.appearance
+    }
+
+    var preferredColorScheme: ColorScheme? {
+        appearancePreference.colorScheme
+    }
+
     func bootstrap() async {
         do {
             var loadedSnapshot = try await persistence.load()
@@ -102,6 +110,7 @@ final class AppModel: ObservableObject {
                 loadedSnapshot.preferences.releasePageURL = AppPreferenceRecord.defaultReleasePageURL
             }
             snapshot = loadedSnapshot
+            applyAppearancePreference()
             configureSparkleUpdater()
 
             if let firstNote = filteredNotes.first {
@@ -116,6 +125,7 @@ final class AppModel: ObservableObject {
             }
         } catch {
             snapshot = .empty
+            applyAppearancePreference()
             lastOperationMessage = "初始化存储失败：\(error.localizedDescription)"
         }
     }
@@ -365,6 +375,15 @@ final class AppModel: ObservableObject {
         NSWorkspace.shared.open(url)
     }
 
+    func updateAppearance(_ appearance: AppAppearancePreference) {
+        guard snapshot.preferences.appearance != appearance else { return }
+        snapshot.updatePreferences {
+            $0.appearance = appearance
+        }
+        applyAppearancePreference()
+        scheduleAutosave(immediate: true)
+    }
+
     func updatePreferences(appcastURL: String, releasePageURL: String, checksForUpdatesAutomatically: Bool) {
         snapshot.updatePreferences {
             $0.appcastURL = appcastURL
@@ -422,6 +441,10 @@ final class AppModel: ObservableObject {
             feedURLString: snapshot.preferences.appcastURL,
             automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
         )
+    }
+
+    private func applyAppearancePreference() {
+        NSApp.appearance = appearancePreference.nsAppearance
     }
 
     func organizeIfNeeded(noteID: UUID, overwriteManualMetadata: Bool) async {

@@ -228,7 +228,7 @@ public struct AIProfileRecord: Identifiable, Codable, Equatable, Hashable, Senda
         organizationPrompt = try container.decodeIfPresent(String.self, forKey: .organizationPrompt) ?? Self.defaultOrganizationPrompt
         isActive = try container.decode(Bool.self, forKey: .isActive)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .now
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -274,6 +274,14 @@ public struct OrganizationJobRecord: Identifiable, Codable, Equatable, Hashable,
     }
 }
 
+public enum AppAppearancePreference: String, Codable, CaseIterable, Identifiable, Sendable {
+    case system
+    case light
+    case dark
+
+    public var id: String { rawValue }
+}
+
 public struct AppPreferenceRecord: Codable, Equatable, Hashable, Sendable {
     public static let defaultAppcastURL = "https://indincys.github.io/Whitecat/appcast.xml"
     public static let defaultReleasePageURL = "https://github.com/indincys/Whitecat/releases"
@@ -281,18 +289,47 @@ public struct AppPreferenceRecord: Codable, Equatable, Hashable, Sendable {
     public var appcastURL: String
     public var releasePageURL: String
     public var checksForUpdatesAutomatically: Bool
+    public var appearance: AppAppearancePreference
     public var updatedAt: Date
 
     public init(
         appcastURL: String = AppPreferenceRecord.defaultAppcastURL,
         releasePageURL: String = AppPreferenceRecord.defaultReleasePageURL,
         checksForUpdatesAutomatically: Bool = false,
+        appearance: AppAppearancePreference = .system,
         updatedAt: Date = .now
     ) {
         self.appcastURL = appcastURL
         self.releasePageURL = releasePageURL
         self.checksForUpdatesAutomatically = checksForUpdatesAutomatically
+        self.appearance = appearance
         self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case appcastURL
+        case releasePageURL
+        case checksForUpdatesAutomatically
+        case appearance
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        appcastURL = try container.decodeIfPresent(String.self, forKey: .appcastURL) ?? Self.defaultAppcastURL
+        releasePageURL = try container.decodeIfPresent(String.self, forKey: .releasePageURL) ?? Self.defaultReleasePageURL
+        checksForUpdatesAutomatically = try container.decodeIfPresent(Bool.self, forKey: .checksForUpdatesAutomatically) ?? false
+        appearance = try container.decodeIfPresent(AppAppearancePreference.self, forKey: .appearance) ?? .system
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? .now
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(appcastURL, forKey: .appcastURL)
+        try container.encode(releasePageURL, forKey: .releasePageURL)
+        try container.encode(checksForUpdatesAutomatically, forKey: .checksForUpdatesAutomatically)
+        try container.encode(appearance, forKey: .appearance)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 }
 

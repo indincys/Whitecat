@@ -18,8 +18,8 @@ struct ContentView: View {
             detailPane
                 .navigationSplitViewColumnWidth(min: 560, ideal: 760)
         }
-        .tint(Color(red: 0.26, green: 0.42, blue: 0.36))
-        .background(Color(red: 0.962, green: 0.956, blue: 0.936))
+        .tint(WhitecatTheme.accentColor)
+        .background(WhitecatTheme.workspaceBackground)
         .task {
             await model.bootstrap()
             editorShouldFocus = true
@@ -152,18 +152,11 @@ struct ContentView: View {
                     .padding(.horizontal, 24)
                     .padding(.vertical, 12)
                 }
-                .background(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.992, green: 0.988, blue: 0.974),
-                            Color.white
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .background(WhitecatTheme.detailPaneBackground())
             } else {
                 ContentUnavailableView("没有选中的笔记", systemImage: "square.and.pencil")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(WhitecatTheme.detailPaneBackground())
             }
         }
     }

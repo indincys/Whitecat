@@ -85,3 +85,21 @@ func profileDecodingBackfillsDefaultPrompt() throws {
 
     #expect(profile.trimmedOrganizationPrompt == AIProfileRecord.defaultOrganizationPrompt)
 }
+
+@Test("旧偏好配置缺少外观字段时默认跟随系统")
+func preferencesDecodingBackfillsSystemAppearance() throws {
+    let json = """
+    {
+      "appcastURL": "https://example.com/appcast.xml",
+      "releasePageURL": "https://example.com/releases",
+      "checksForUpdatesAutomatically": true,
+      "updatedAt": "2026-03-10T00:00:00Z"
+    }
+    """
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let preferences = try decoder.decode(AppPreferenceRecord.self, from: Data(json.utf8))
+
+    #expect(preferences.appearance == .system)
+}

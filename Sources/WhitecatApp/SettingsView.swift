@@ -18,6 +18,8 @@ struct SettingsView: View {
                 .tabItem { Label("模型", systemImage: "sparkles") }
             captureSettingsTab
                 .tabItem { Label("快速收集", systemImage: "keyboard") }
+            appearanceSettingsTab
+                .tabItem { Label("外观", systemImage: "circle.lefthalf.filled") }
             updateSettingsTab
                 .tabItem { Label("更新", systemImage: "arrow.down.app") }
         }
@@ -189,6 +191,25 @@ struct SettingsView: View {
         .padding(24)
     }
 
+    private var appearanceSettingsTab: some View {
+        Form {
+            Section("外观模式") {
+                Picker("主题", selection: appearanceBinding) {
+                    ForEach(AppAppearancePreference.allCases) { appearance in
+                        Text(appearance.displayName)
+                            .tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(model.snapshot.preferences.appearance.detailDescription)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .padding(24)
+    }
+
     private var updateSettingsTab: some View {
         Form {
             Section("更新源") {
@@ -272,6 +293,13 @@ struct SettingsView: View {
 
     private var selectedProfile: AIProfileRecord? {
         model.snapshot.profiles.first(where: { $0.id == selectedProfileID }) ?? model.activeProfile
+    }
+
+    private var appearanceBinding: Binding<AppAppearancePreference> {
+        Binding(
+            get: { model.snapshot.preferences.appearance },
+            set: { model.updateAppearance($0) }
+        )
     }
 
     private func hydratePreferenceDrafts() {

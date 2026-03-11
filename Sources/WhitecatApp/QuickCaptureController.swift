@@ -1,5 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
+import NotesCore
 import SwiftUI
 
 @MainActor
@@ -9,6 +11,7 @@ final class QuickCaptureController: ObservableObject {
     private weak var model: AppModel?
     private let viewModel = QuickCaptureViewModel()
     private var didConfigure = false
+    private var appearanceObserver: AnyCancellable?
 
     private lazy var hotKeyMonitor = GlobalHotKeyMonitor(
         keyCode: UInt32(kVK_ANSI_N),
@@ -31,6 +34,13 @@ final class QuickCaptureController: ObservableObject {
 
     func configure(model: AppModel) {
         self.model = model
+        panelController.applyAppearance(model.appearancePreference)
+        appearanceObserver = model.$snapshot
+            .map(\.preferences.appearance)
+            .removeDuplicates()
+            .sink { [weak self] appearance in
+                self?.panelController.applyAppearance(appearance)
+            }
 
         guard !didConfigure else { return }
         hotKeyMonitor.start()
@@ -39,6 +49,7 @@ final class QuickCaptureController: ObservableObject {
 
     func show() {
         viewModel.requestFocus()
+        panelController.applyAppearance(model?.appearancePreference ?? .system)
         NSApp.activate(ignoringOtherApps: true)
         panelController.show()
     }
@@ -105,6 +116,10 @@ private final class QuickCapturePanelController: NSWindowController {
         }
         showWindow(nil)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    func applyAppearance(_ appearance: AppAppearancePreference) {
+        window?.appearance = appearance.nsAppearance
     }
 
     func hide() {
