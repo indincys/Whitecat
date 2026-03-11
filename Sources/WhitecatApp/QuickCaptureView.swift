@@ -23,23 +23,12 @@ struct QuickCaptureView: View {
     let onCancel: () -> Void
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            QuickCaptureTextView(
-                text: $viewModel.text,
-                focusTicket: viewModel.focusTicket,
-                onSubmit: onSubmit,
-                onCancel: onCancel
-            )
-
-            if viewModel.text.isEmpty {
-                Text("直接输入正文，按 Command-Enter 保存，按 Esc 关闭")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 8)
-                    .padding(.top, 18)
-                    .allowsHitTesting(false)
-            }
-        }
+        QuickCaptureTextView(
+            text: $viewModel.text,
+            focusTicket: viewModel.focusTicket,
+            onSubmit: onSubmit,
+            onCancel: onCancel
+        )
         .padding(20)
         .frame(minWidth: 520, minHeight: 260)
         .background(Color(nsColor: .windowBackgroundColor))

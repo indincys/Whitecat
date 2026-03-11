@@ -174,10 +174,16 @@ struct SettingsView: View {
         Form {
             Section("快捷键") {
                 Text("全局快捷键：\(QuickCaptureController.shortcutDisplay)")
+                Text("置顶快捷键：\(QuickCaptureController.pinnedShortcutDisplay)")
                 Text("应用运行时可用。触发后只弹出一个正文输入小窗，不会打开主窗口。")
                     .foregroundStyle(.secondary)
-                Button("打开快速收集窗口") {
-                    quickCaptureController.show()
+                HStack {
+                    Button("打开快速收集窗口") {
+                        quickCaptureController.show()
+                    }
+                    Button("打开并置顶") {
+                        quickCaptureController.showPinned()
+                    }
                 }
             }
 

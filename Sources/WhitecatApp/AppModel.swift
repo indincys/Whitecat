@@ -33,8 +33,15 @@ final class AppModel: ObservableObject {
     private let unsignedUpdateInstaller: UnsignedUpdateInstaller
     private let updateInstallationMode: UpdateInstallationMode
     private var autosaveTask: Task<Void, Never>?
+    private var organizationTasks: [UUID: Task<Void, Never>] = [:]
+    private var queuedOrganizationRequests: [UUID: Bool] = [:]
+    private var scheduledOrganizationTasks: [UUID: Task<Void, Never>] = [:]
     private var retryTasks: [UUID: Task<Void, Never>] = [:]
     private var storageRootURL: URL?
+
+    private let automaticOrganizationGraceInterval: TimeInterval = 1.6
+    private let manualOrganizationGraceInterval: TimeInterval = 0.9
+    private let softRetryDelays: [TimeInterval] = [4, 10, 25]
 
     init(
         persistence: LibraryPersistence = LibraryPersistence(),
@@ -110,23 +117,23 @@ final class AppModel: ObservableObject {
                 loadedSnapshot.preferences.releasePageURL = AppPreferenceRecord.defaultReleasePageURL
             }
             snapshot = loadedSnapshot
-            applyAppearancePreference()
-            configureSparkleUpdater()
-
-            if let firstNote = filteredNotes.first {
-                selectedNoteID = firstNote.id
-            }
-            if snapshot.notes.isEmpty {
-                createNote()
-            }
-            if let url = try? await persistence.storageRootURL() {
-                storageRootURL = url
-                storageLocationDescription = url.path()
-            }
         } catch {
             snapshot = .empty
-            applyAppearancePreference()
             lastOperationMessage = "初始化存储失败：\(error.localizedDescription)"
+        }
+
+        applyAppearancePreference()
+        configureSparkleUpdater()
+
+        if let firstNote = filteredNotes.first {
+            selectedNoteID = firstNote.id
+        }
+        if snapshot.notes.isEmpty {
+            createNote()
+        }
+        if let url = try? await persistence.storageRootURL() {
+            storageRootURL = url
+            storageLocationDescription = url.path(percentEncoded: false)
         }
     }
 
@@ -145,7 +152,11 @@ final class AppModel: ObservableObject {
             $0.updateBody(trimmedBody)
         }
         scheduleAutosave(immediate: true)
-        await organizeIfNeeded(noteID: noteID, overwriteManualMetadata: false)
+        queueOrganization(
+            noteID: noteID,
+            overwriteManualMetadata: false,
+            delay: automaticOrganizationGraceInterval
+        )
     }
 
     func deleteSelectedNote() {
@@ -167,17 +178,21 @@ final class AppModel: ObservableObject {
         let previous = selectedNoteID
         selectedNoteID = noteID
         if let previous, previous != noteID {
-            Task {
-                await self.organizeIfNeeded(noteID: previous, overwriteManualMetadata: false)
-            }
+            queueOrganization(
+                noteID: previous,
+                overwriteManualMetadata: false,
+                delay: automaticOrganizationGraceInterval
+            )
         }
     }
 
     func handleSceneDeactivation() {
         if let selectedNoteID {
-            Task {
-                await self.organizeIfNeeded(noteID: selectedNoteID, overwriteManualMetadata: false)
-            }
+            queueOrganization(
+                noteID: selectedNoteID,
+                overwriteManualMetadata: false,
+                delay: automaticOrganizationGraceInterval
+            )
         }
     }
 
@@ -396,9 +411,11 @@ final class AppModel: ObservableObject {
 
     func retryOrganizationForSelectedNote() {
         guard let selectedNoteID else { return }
-        Task {
-            await self.organizeIfNeeded(noteID: selectedNoteID, overwriteManualMetadata: true)
-        }
+        queueOrganization(
+            noteID: selectedNoteID,
+            overwriteManualMetadata: true,
+            delay: manualOrganizationGraceInterval
+        )
     }
 
     private func scheduleAutosave(immediate: Bool = false) {
@@ -412,15 +429,20 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func scheduleRetry(for noteID: UUID, attemptCount: Int) {
-        retryTasks[noteID]?.cancel()
+    private func scheduleRetry(for noteID: UUID, attemptCount: Int, overwriteManualMetadata: Bool) {
         let nextRetry = RetryPlanner.nextRetryDate(afterAttempt: attemptCount)
-        let delay = max(1, nextRetry.timeIntervalSinceNow)
+        scheduleRetry(for: noteID, nextRetryAt: nextRetry, overwriteManualMetadata: overwriteManualMetadata)
+    }
+
+    private func scheduleRetry(for noteID: UUID, nextRetryAt: Date, overwriteManualMetadata: Bool) {
+        retryTasks[noteID]?.cancel()
+        queuedOrganizationRequests[noteID] = (queuedOrganizationRequests[noteID] ?? false) || overwriteManualMetadata
+        let delay = max(1, nextRetryAt.timeIntervalSinceNow)
 
         retryTasks[noteID] = Task {
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await self.organizeIfNeeded(noteID: noteID, overwriteManualMetadata: false)
+            self.startQueuedOrganization(noteID: noteID)
         }
     }
 
@@ -447,7 +469,55 @@ final class AppModel: ObservableObject {
         NSApp.appearance = appearancePreference.nsAppearance
     }
 
-    func organizeIfNeeded(noteID: UUID, overwriteManualMetadata: Bool) async {
+    private func queueOrganization(noteID: UUID, overwriteManualMetadata: Bool, delay: TimeInterval) {
+        guard snapshot.note(id: noteID) != nil else { return }
+
+        retryTasks[noteID]?.cancel()
+        retryTasks[noteID] = nil
+        queuedOrganizationRequests[noteID] = (queuedOrganizationRequests[noteID] ?? false) || overwriteManualMetadata
+
+        if organizationTasks[noteID] != nil {
+            if overwriteManualMetadata {
+                lastOperationMessage = "AI 正在整理当前笔记，已自动排队再次整理。"
+            }
+            return
+        }
+
+        scheduledOrganizationTasks[noteID]?.cancel()
+        scheduledOrganizationTasks[noteID] = Task { [weak self] in
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            self?.startQueuedOrganization(noteID: noteID)
+        }
+    }
+
+    private func startQueuedOrganization(noteID: UUID) {
+        scheduledOrganizationTasks[noteID] = nil
+        retryTasks[noteID] = nil
+        guard organizationTasks[noteID] == nil else { return }
+
+        let overwriteManualMetadata = queuedOrganizationRequests.removeValue(forKey: noteID) ?? false
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.organizeIfNeeded(noteID: noteID, overwriteManualMetadata: overwriteManualMetadata)
+        }
+        organizationTasks[noteID] = task
+    }
+
+    private func organizeIfNeeded(noteID: UUID, overwriteManualMetadata: Bool) async {
+        defer {
+            organizationTasks[noteID] = nil
+            if let queuedOverwrite = queuedOrganizationRequests.removeValue(forKey: noteID) {
+                queueOrganization(
+                    noteID: noteID,
+                    overwriteManualMetadata: queuedOverwrite,
+                    delay: manualOrganizationGraceInterval
+                )
+            }
+        }
+
         guard let note = snapshot.note(id: noteID) else { return }
         guard note.needsOrganization || overwriteManualMetadata else { return }
         guard let profile = currentProfileForOrganization() else {
@@ -461,16 +531,86 @@ final class AppModel: ObservableObject {
         do {
             let payload = try await organizer.organize(note: note, library: snapshot, profile: profile)
             snapshot.applyOrganizationPayload(payload, to: noteID, allowOverwritingManual: overwriteManualMetadata)
+            scheduledOrganizationTasks[noteID]?.cancel()
+            scheduledOrganizationTasks[noteID] = nil
             retryTasks[noteID]?.cancel()
             retryTasks[noteID] = nil
             lastOperationMessage = "已完成《\(snapshot.note(id: noteID)?.displayTitle ?? "笔记")》的 AI 整理。"
         } catch {
-            snapshot.markFailure(noteID: noteID, message: error.localizedDescription)
-            let attemptCount = snapshot.jobs.first(where: { $0.noteID == noteID })?.attemptCount ?? 1
-            scheduleRetry(for: noteID, attemptCount: attemptCount)
-            lastOperationMessage = error.localizedDescription
+            handleOrganizationFailure(
+                error,
+                noteID: noteID,
+                overwriteManualMetadata: overwriteManualMetadata
+            )
         }
 
         scheduleAutosave(immediate: true)
+    }
+
+    private func handleOrganizationFailure(_ error: Error, noteID: UUID, overwriteManualMetadata: Bool) {
+        let nextAttempt = (snapshot.jobs.first(where: { $0.noteID == noteID })?.attemptCount ?? 0) + 1
+
+        if let softRetryDelay = softRetryDelay(for: error, attemptCount: nextAttempt) {
+            let nextRetryAt = Date().addingTimeInterval(softRetryDelay)
+            snapshot.markDeferredRetry(noteID: noteID, nextRetryAt: nextRetryAt)
+            scheduleRetry(
+                for: noteID,
+                nextRetryAt: nextRetryAt,
+                overwriteManualMetadata: overwriteManualMetadata
+            )
+            lastOperationMessage = "AI 还在整理《\(snapshot.note(id: noteID)?.displayTitle ?? "笔记")》，已自动稍后重试。"
+            return
+        }
+
+        snapshot.markFailure(noteID: noteID, message: error.localizedDescription)
+        if shouldScheduleStandardRetry(for: error) {
+            let attemptCount = snapshot.jobs.first(where: { $0.noteID == noteID })?.attemptCount ?? 1
+            scheduleRetry(
+                for: noteID,
+                attemptCount: attemptCount,
+                overwriteManualMetadata: overwriteManualMetadata
+            )
+        } else {
+            retryTasks[noteID]?.cancel()
+            retryTasks[noteID] = nil
+        }
+        lastOperationMessage = error.localizedDescription
+    }
+
+    private func softRetryDelay(for error: Error, attemptCount: Int) -> TimeInterval? {
+        if let organizerError = error as? NoteOrganizerError {
+            switch organizerError {
+            case .invalidResponse, .malformedPayload:
+                let index = min(max(attemptCount - 1, 0), softRetryDelays.count - 1)
+                return softRetryDelays[index]
+            case .missingAPIKey, .invalidBaseURL, .providerFailure:
+                return nil
+            }
+        }
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet:
+                let index = min(max(attemptCount - 1, 0), softRetryDelays.count - 1)
+                return softRetryDelays[index]
+            default:
+                return nil
+            }
+        }
+
+        return nil
+    }
+
+    private func shouldScheduleStandardRetry(for error: Error) -> Bool {
+        if let organizerError = error as? NoteOrganizerError {
+            switch organizerError {
+            case .missingAPIKey, .invalidBaseURL:
+                return false
+            case .invalidResponse, .providerFailure, .malformedPayload:
+                return true
+            }
+        }
+
+        return true
     }
 }

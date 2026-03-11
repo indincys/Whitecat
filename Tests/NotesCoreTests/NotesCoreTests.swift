@@ -103,3 +103,58 @@ func preferencesDecodingBackfillsSystemAppearance() throws {
 
     #expect(preferences.appearance == .system)
 }
+
+@Test("旧笔记缺少新版状态字段时也能恢复")
+func noteDecodingBackfillsNewFields() throws {
+    let json = """
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "bodyMarkdown": "旧笔记正文",
+      "organizationStatus": "organized",
+      "createdAt": "2026-03-10T00:00:00Z",
+      "updatedAt": "2026-03-10T00:00:00Z"
+    }
+    """
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let note = try decoder.decode(NoteRecord.self, from: Data(json.utf8))
+
+    #expect(note.contentHash == NoteRecord.hash(for: "旧笔记正文"))
+    #expect(note.lastOrganizedContentHash == note.contentHash)
+    #expect(note.organizationStatus == .organized)
+}
+
+@Test("主库损坏时会回退到备份文件")
+func persistenceFallsBackToBackup() async throws {
+    let fileManager = FileManager.default
+    let persistence = LibraryPersistence(
+        configuration: .init(
+            appDirectoryName: "WhitecatTests-\(UUID().uuidString)",
+            metadataFilename: "library.json",
+            preferICloud: false
+        )
+    )
+
+    var snapshot = LibrarySnapshot()
+    let noteID = snapshot.insertDraftNote()
+    snapshot.updateNote(id: noteID) {
+        $0.updateBody("备份里的正文")
+    }
+    try await persistence.save(snapshot)
+
+    let storageRoot = try await persistence.storageRootURL()
+    defer {
+        try? fileManager.removeItem(at: storageRoot)
+    }
+
+    let primaryURL = storageRoot.appending(path: "library.json")
+    let backupURL = storageRoot.appending(path: "library-backup.json")
+    #expect(fileManager.fileExists(atPath: backupURL.path(percentEncoded: false)))
+    let backupContents = try String(contentsOf: backupURL, encoding: .utf8)
+    #expect(backupContents.contains("备份里的正文"))
+    try Data("not-json".utf8).write(to: primaryURL, options: .atomic)
+
+    let recoveredSnapshot = try await persistence.load()
+    #expect(recoveredSnapshot.note(id: noteID)?.bodyMarkdown == "备份里的正文")
+}

@@ -117,7 +117,9 @@ struct ContentView: View {
                 } label: {
                     Label("快速收集", systemImage: "bolt.badge.clock")
                 }
-                .help("快速收集（\(QuickCaptureController.shortcutDisplay)）")
+                .help(
+                    "快速收集（\(QuickCaptureController.shortcutDisplay)），置顶打开（\(QuickCaptureController.pinnedShortcutDisplay)）"
+                )
 
                 Button {
                     model.deleteSelectedNote()
@@ -194,6 +196,10 @@ private struct NoteHeaderView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if note.organizationStatus == .processing {
+                    ProgressView()
+                        .controlSize(.small)
+                }
                 Button("重新整理") {
                     model.retryOrganizationForSelectedNote()
                 }
@@ -227,7 +233,11 @@ private struct NoteHeaderView: View {
                 )
             }
 
-            if let message = note.lastErrorMessage, note.organizationStatus == .failed {
+            if note.organizationStatus == .processing {
+                Label("AI 正在整理标题、分类、标签和文件夹。", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let message = note.lastErrorMessage, note.organizationStatus == .failed {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.red)

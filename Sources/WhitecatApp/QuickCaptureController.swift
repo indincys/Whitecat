@@ -7,6 +7,7 @@ import SwiftUI
 @MainActor
 final class QuickCaptureController: ObservableObject {
     static let shortcutDisplay = "\u{2325}\u{2318}N"
+    static let pinnedShortcutDisplay = "\u{2303}\u{2325}\u{2318}N"
 
     private weak var model: AppModel?
     private let viewModel = QuickCaptureViewModel()
@@ -19,6 +20,15 @@ final class QuickCaptureController: ObservableObject {
     ) { [weak self] in
         Task { @MainActor in
             self?.show()
+        }
+    }
+
+    private lazy var pinnedHotKeyMonitor = GlobalHotKeyMonitor(
+        keyCode: UInt32(kVK_ANSI_N),
+        modifiers: UInt32(controlKey | optionKey | cmdKey)
+    ) { [weak self] in
+        Task { @MainActor in
+            self?.showPinned()
         }
     }
 
@@ -44,14 +54,23 @@ final class QuickCaptureController: ObservableObject {
 
         guard !didConfigure else { return }
         hotKeyMonitor.start()
+        pinnedHotKeyMonitor.start()
         didConfigure = true
     }
 
     func show() {
+        show(pinned: false)
+    }
+
+    func showPinned() {
+        show(pinned: true)
+    }
+
+    private func show(pinned: Bool) {
         viewModel.requestFocus()
         panelController.applyAppearance(model?.appearancePreference ?? .system)
         NSApp.activate(ignoringOtherApps: true)
-        panelController.show()
+        panelController.show(pinned: pinned)
     }
 
     func hide() {
@@ -109,13 +128,18 @@ private final class QuickCapturePanelController: NSWindowController {
         nil
     }
 
-    func show() {
+    func show(pinned: Bool) {
         guard let window else { return }
         if !window.isVisible {
             window.center()
         }
+        applyPinState(pinned)
         showWindow(nil)
-        window.makeKeyAndOrderFront(nil)
+        if pinned {
+            window.orderFrontRegardless()
+        } else {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     func applyAppearance(_ appearance: AppAppearancePreference) {
@@ -124,6 +148,15 @@ private final class QuickCapturePanelController: NSWindowController {
 
     func hide() {
         close()
+    }
+
+    private func applyPinState(_ pinned: Bool) {
+        guard let panel = window as? QuickCapturePanel else { return }
+        panel.level = pinned ? .statusBar : .floating
+        panel.hidesOnDeactivate = !pinned
+        panel.collectionBehavior = pinned
+            ? [.canJoinAllSpaces, .moveToActiveSpace, .fullScreenAuxiliary]
+            : [.moveToActiveSpace, .fullScreenAuxiliary]
     }
 }
 

@@ -30,6 +30,11 @@ struct WhitecatApp: App {
                     quickCaptureController.show()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .option])
+
+                Button("快速收集并置顶") {
+                    quickCaptureController.showPinned()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .option, .control])
             }
         }
 

@@ -117,6 +117,34 @@ public struct FolderRecord: Identifiable, Codable, Equatable, Hashable, Sendable
         let display = collapsed.isEmpty ? "未分类" : collapsed
         return (display, display.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current))
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case normalizedName
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedName = try container.decode(String.self, forKey: .name)
+        let normalized = Self.normalizeName(decodedName)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = normalized.display
+        normalizedName = normalized.key
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(normalizedName, forKey: .normalizedName)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 public struct TagRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
@@ -137,6 +165,34 @@ public struct TagRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
 
     public static func normalizeName(_ value: String) -> (display: String, key: String) {
         FolderRecord.normalizeName(value)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case normalizedName
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedName = try container.decode(String.self, forKey: .name)
+        let normalized = Self.normalizeName(decodedName)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = normalized.display
+        normalizedName = normalized.key
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(normalizedName, forKey: .normalizedName)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
     }
 }
 
@@ -272,6 +328,38 @@ public struct OrganizationJobRecord: Identifiable, Codable, Equatable, Hashable,
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case noteID
+        case attemptCount
+        case nextRetryAt
+        case lastErrorMessage
+        case createdAt
+        case updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        noteID = try container.decode(UUID.self, forKey: .noteID)
+        attemptCount = try container.decodeIfPresent(Int.self, forKey: .attemptCount) ?? 0
+        nextRetryAt = try container.decodeIfPresent(Date.self, forKey: .nextRetryAt)
+        lastErrorMessage = try container.decodeIfPresent(String.self, forKey: .lastErrorMessage)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(noteID, forKey: .noteID)
+        try container.encode(attemptCount, forKey: .attemptCount)
+        try container.encode(nextRetryAt, forKey: .nextRetryAt)
+        try container.encode(lastErrorMessage, forKey: .lastErrorMessage)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 public enum AppAppearancePreference: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -393,6 +481,83 @@ public struct NoteRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.lastErrorMessage = lastErrorMessage
     }
 
+    enum CodingKeys: String, CodingKey {
+        case id
+        case bodyMarkdown
+        case title
+        case titleSource
+        case category
+        case categorySource
+        case folderID
+        case folderSource
+        case tagIDs
+        case tagsSource
+        case organizationStatus
+        case contentHash
+        case lastOrganizedContentHash
+        case createdAt
+        case updatedAt
+        case lastOrganizedAt
+        case lastFailedAt
+        case lastErrorMessage
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedBody = try container.decodeIfPresent(String.self, forKey: .bodyMarkdown) ?? ""
+        let decodedContentHash = try container.decodeIfPresent(String.self, forKey: .contentHash) ?? Self.hash(for: decodedBody)
+        let decodedCreatedAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .now
+        let decodedStatus = try container.decodeIfPresent(OrganizationStatus.self, forKey: .organizationStatus) ?? .pending
+
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        bodyMarkdown = decodedBody
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        titleSource = try container.decodeIfPresent(MetadataSource.self, forKey: .titleSource)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+        categorySource = try container.decodeIfPresent(MetadataSource.self, forKey: .categorySource)
+        folderID = try container.decodeIfPresent(UUID.self, forKey: .folderID)
+        folderSource = try container.decodeIfPresent(MetadataSource.self, forKey: .folderSource)
+        tagIDs = try container.decodeIfPresent([UUID].self, forKey: .tagIDs) ?? []
+        tagsSource = try container.decodeIfPresent(MetadataSource.self, forKey: .tagsSource)
+        organizationStatus = decodedStatus == .processing ? .pending : decodedStatus
+        contentHash = decodedContentHash
+        createdAt = decodedCreatedAt
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? decodedCreatedAt
+        lastOrganizedAt = try container.decodeIfPresent(Date.self, forKey: .lastOrganizedAt)
+        lastFailedAt = try container.decodeIfPresent(Date.self, forKey: .lastFailedAt)
+        lastErrorMessage = try container.decodeIfPresent(String.self, forKey: .lastErrorMessage)
+
+        if let storedLastHash = try container.decodeIfPresent(String.self, forKey: .lastOrganizedContentHash) {
+            lastOrganizedContentHash = storedLastHash
+        } else if organizationStatus == .organized, !decodedBody.isBlank {
+            lastOrganizedContentHash = decodedContentHash
+        } else {
+            lastOrganizedContentHash = nil
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(bodyMarkdown, forKey: .bodyMarkdown)
+        try container.encode(title, forKey: .title)
+        try container.encode(titleSource, forKey: .titleSource)
+        try container.encode(category, forKey: .category)
+        try container.encode(categorySource, forKey: .categorySource)
+        try container.encode(folderID, forKey: .folderID)
+        try container.encode(folderSource, forKey: .folderSource)
+        try container.encode(tagIDs, forKey: .tagIDs)
+        try container.encode(tagsSource, forKey: .tagsSource)
+        try container.encode(organizationStatus, forKey: .organizationStatus)
+        try container.encode(contentHash, forKey: .contentHash)
+        try container.encode(lastOrganizedContentHash, forKey: .lastOrganizedContentHash)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(lastOrganizedAt, forKey: .lastOrganizedAt)
+        try container.encode(lastFailedAt, forKey: .lastFailedAt)
+        try container.encode(lastErrorMessage, forKey: .lastErrorMessage)
+    }
+
     public static func draft(now: Date = .now) -> NoteRecord {
         NoteRecord(createdAt: now, updatedAt: now)
     }
@@ -452,6 +617,7 @@ public struct NoteRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
     public mutating func markProcessing(at date: Date = .now) {
         organizationStatus = .processing
         updatedAt = date
+        lastErrorMessage = nil
     }
 
     public mutating func markOrganized(at date: Date = .now) {
@@ -467,6 +633,12 @@ public struct NoteRecord: Identifiable, Codable, Equatable, Hashable, Sendable {
         updatedAt = date
         lastFailedAt = date
         lastErrorMessage = message
+    }
+
+    public mutating func markPendingRetry(message: String? = nil, at date: Date = .now) {
+        organizationStatus = .pending
+        updatedAt = date
+        lastErrorMessage = message?.nonEmptyTrimmed
     }
 
     public mutating func applyManualTitle(_ value: String, at date: Date = .now) {
@@ -524,6 +696,35 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
         self.profiles = profiles
         self.jobs = jobs
         self.preferences = preferences
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case notes
+        case folders
+        case tags
+        case profiles
+        case jobs
+        case preferences
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notes = try container.decodeIfPresent([NoteRecord].self, forKey: .notes) ?? []
+        folders = try container.decodeIfPresent([FolderRecord].self, forKey: .folders) ?? []
+        tags = try container.decodeIfPresent([TagRecord].self, forKey: .tags) ?? []
+        profiles = try container.decodeIfPresent([AIProfileRecord].self, forKey: .profiles) ?? LibrarySnapshot.empty.profiles
+        jobs = try container.decodeIfPresent([OrganizationJobRecord].self, forKey: .jobs) ?? []
+        preferences = try container.decodeIfPresent(AppPreferenceRecord.self, forKey: .preferences) ?? AppPreferenceRecord()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(notes, forKey: .notes)
+        try container.encode(folders, forKey: .folders)
+        try container.encode(tags, forKey: .tags)
+        try container.encode(profiles, forKey: .profiles)
+        try container.encode(jobs, forKey: .jobs)
+        try container.encode(preferences, forKey: .preferences)
     }
 
     public static let empty = LibrarySnapshot()
@@ -705,6 +906,35 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
                     noteID: noteID,
                     attemptCount: 1,
                     nextRetryAt: RetryPlanner.nextRetryDate(afterAttempt: 1, now: date),
+                    lastErrorMessage: message,
+                    createdAt: date,
+                    updatedAt: date
+                )
+            )
+        }
+    }
+
+    public mutating func markDeferredRetry(
+        noteID: UUID,
+        nextRetryAt: Date,
+        message: String? = nil,
+        at date: Date = .now
+    ) {
+        updateNote(id: noteID) {
+            $0.markPendingRetry(message: message, at: date)
+        }
+
+        if let index = jobs.firstIndex(where: { $0.noteID == noteID }) {
+            jobs[index].attemptCount += 1
+            jobs[index].lastErrorMessage = message
+            jobs[index].nextRetryAt = nextRetryAt
+            jobs[index].updatedAt = date
+        } else {
+            jobs.append(
+                OrganizationJobRecord(
+                    noteID: noteID,
+                    attemptCount: 1,
+                    nextRetryAt: nextRetryAt,
                     lastErrorMessage: message,
                     createdAt: date,
                     updatedAt: date
