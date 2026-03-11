@@ -71,6 +71,10 @@ final class AppModel: ObservableObject {
         snapshot.note(id: selectedNoteID)
     }
 
+    func note(id: UUID) -> NoteRecord? {
+        snapshot.note(id: id)
+    }
+
     var selectedNoteTagsText: String {
         guard let selectedNote else { return "" }
         return snapshot.tags(for: selectedNote).map(\.name).joined(separator: ", ")
@@ -157,16 +161,13 @@ final class AppModel: ObservableObject {
     func deleteSelectedNote() {
         guard let selectedNoteID else { return }
         snapshot.deleteNote(id: selectedNoteID)
-        self.selectedNoteID = filteredNotes.first?.id
+        syncSelectionWithVisibleNotes()
         scheduleAutosave(immediate: true)
     }
 
     func changeScope(_ scope: LibrarySidebarScope) {
         selectedScope = scope
-        if let selectedNoteID, filteredNotes.contains(where: { $0.id == selectedNoteID }) {
-            return
-        }
-        self.selectedNoteID = filteredNotes.first?.id
+        syncSelectionWithVisibleNotes()
     }
 
     func changeSelection(to noteID: UUID?) {
@@ -180,6 +181,10 @@ final class AppModel: ObservableObject {
                 delay: automaticOrganizationGraceInterval
             )
         }
+    }
+
+    func handleSearchChange() {
+        syncSelectionWithVisibleNotes()
     }
 
     func handleSceneDeactivation() {
@@ -243,8 +248,18 @@ final class AppModel: ObservableObject {
         snapshot.folder(id: note.folderID)?.name ?? "待整理"
     }
 
+    func folderName(for noteID: UUID) -> String {
+        guard let note = snapshot.note(id: noteID) else { return "" }
+        return folderName(for: note)
+    }
+
     func tagNames(for note: NoteRecord) -> String {
         snapshot.tags(for: note).map(\.name).joined(separator: ", ")
+    }
+
+    func tagNames(for noteID: UUID) -> String {
+        guard let note = snapshot.note(id: noteID) else { return "" }
+        return tagNames(for: note)
     }
 
     func sourceBadge(_ source: MetadataSource?) -> String {
@@ -440,8 +455,12 @@ final class AppModel: ObservableObject {
 
     func retryOrganizationForSelectedNote() {
         guard let selectedNoteID else { return }
+        retryOrganization(noteID: selectedNoteID)
+    }
+
+    func retryOrganization(noteID: UUID) {
         queueOrganization(
-            noteID: selectedNoteID,
+            noteID: noteID,
             overwriteManualMetadata: true,
             delay: manualOrganizationGraceInterval
         )
@@ -505,8 +524,10 @@ final class AppModel: ObservableObject {
         if let previousSelection, snapshot.note(id: previousSelection) != nil {
             selectedNoteID = previousSelection
         } else {
-            selectedNoteID = filteredNotes.first?.id ?? snapshot.notes.first?.id
+            selectedNoteID = snapshot.notes.first?.id
         }
+
+        syncSelectionWithVisibleNotes()
     }
 
     private func refreshStorageStatus() async {
@@ -678,5 +699,13 @@ final class AppModel: ObservableObject {
         }
 
         return true
+    }
+
+    private func syncSelectionWithVisibleNotes() {
+        if let selectedNoteID, filteredNotes.contains(where: { $0.id == selectedNoteID }) {
+            return
+        }
+
+        selectedNoteID = filteredNotes.first?.id
     }
 }

@@ -4,8 +4,9 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var quickCaptureController: QuickCaptureController
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
-    @State private var editorShouldFocus = false
+    @State private var editorFocusToken = 0
 
     var body: some View {
         NavigationSplitView {
@@ -22,10 +23,13 @@ struct ContentView: View {
         .background(WhitecatTheme.workspaceBackground)
         .task {
             await model.bootstrap()
-            editorShouldFocus = true
+            editorFocusToken += 1
         }
         .onChange(of: model.selectedNoteID) { _, _ in
-            editorShouldFocus = true
+            editorFocusToken += 1
+        }
+        .onChange(of: model.searchText) { _, _ in
+            model.handleSearchChange()
         }
         .onChange(of: scenePhase) { _, newValue in
             switch newValue {
@@ -84,30 +88,16 @@ struct ContentView: View {
                 set: { model.changeSelection(to: $0) }
             )) {
                 ForEach(model.filteredNotes) { note in
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(note.displayTitle)
-                                .font(.headline)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(note.updatedAt, style: .date)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    noteListRow(note)
+                        .tag(note.id as UUID?)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            model.changeSelection(to: note.id)
                         }
-                        Text(note.bodyPreview)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                        HStack(spacing: 8) {
-                            capsule(note.organizationStatus.rawValue, color: note.organizationStatus == .organized ? .green : .orange)
-                            capsule(model.folderName(for: note), color: .gray)
-                            if let category = note.category, !category.isEmpty {
-                                capsule(category, color: .blue)
-                            }
+                        .onTapGesture(count: 2) {
+                            model.changeSelection(to: note.id)
+                            openWindow(id: WhitecatApp.detachedNoteWindowID, value: note.id)
                         }
-                    }
-                    .padding(.vertical, 6)
-                    .tag(Optional.some(note.id))
                 }
             }
             .listStyle(.inset)
@@ -178,20 +168,7 @@ struct ContentView: View {
     private var detailPane: some View {
         Group {
             if let note = model.selectedNote {
-                VStack(spacing: 0) {
-                    NoteHeaderView(note: note)
-                        .environmentObject(model)
-                    Divider()
-                    MarkdownTextView(
-                        text: Binding(
-                            get: { model.selectedNote?.bodyMarkdown ?? "" },
-                            set: { model.updateBody(for: note.id, body: $0) }
-                        ),
-                        isFocused: editorShouldFocus
-                    )
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
-                }
+                NoteEditorView(noteID: note.id, focusToken: editorFocusToken)
                 .background(WhitecatTheme.detailPaneBackground())
             } else {
                 ContentUnavailableView("没有选中的笔记", systemImage: "square.and.pencil")
@@ -256,83 +233,143 @@ struct ContentView: View {
             .padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
     }
+
+    private func noteListRow(_ note: NoteRecord) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(note.displayTitle)
+                    .font(.headline)
+                    .lineLimit(1)
+                Spacer()
+                Text(note.updatedAt, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(note.bodyPreview)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            HStack(spacing: 8) {
+                capsule(note.organizationStatus.rawValue, color: note.organizationStatus == .organized ? .green : .orange)
+                capsule(model.folderName(for: note), color: .gray)
+                if let category = note.category, !category.isEmpty {
+                    capsule(category, color: .blue)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+struct NoteEditorView: View {
+    @EnvironmentObject private var model: AppModel
+    let noteID: UUID
+    var focusToken: Int
+
+    var body: some View {
+        Group {
+            if model.note(id: noteID) != nil {
+                VStack(spacing: 0) {
+                    NoteHeaderView(noteID: noteID)
+                        .environmentObject(model)
+                    Divider()
+                    MarkdownTextView(
+                        text: Binding(
+                            get: { model.note(id: noteID)?.bodyMarkdown ?? "" },
+                            set: { model.updateBody(for: noteID, body: $0) }
+                        ),
+                        focusToken: focusToken
+                    )
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                }
+            } else {
+                ContentUnavailableView("笔记不存在", systemImage: "note.text.badge.minus")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
 }
 
 private struct NoteHeaderView: View {
     @EnvironmentObject private var model: AppModel
-    let note: NoteRecord
+    let noteID: UUID
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 6) {
-                    TextField(
-                        "AI 会在整理后自动生成标题",
-                        text: Binding(
-                            get: { model.selectedNote?.title ?? "" },
-                            set: { model.updateTitle(for: note.id, title: $0) }
+        Group {
+            if let note = model.note(id: noteID) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField(
+                                "AI 会在整理后自动生成标题",
+                                text: Binding(
+                                    get: { model.note(id: noteID)?.title ?? "" },
+                                    set: { model.updateTitle(for: noteID, title: $0) }
+                                )
+                            )
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+
+                            Text("创建于 \(note.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if note.organizationStatus == .processing {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Button("重新整理") {
+                            model.retryOrganization(noteID: noteID)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    HStack(spacing: 16) {
+                        metadataField(
+                            title: "主分类",
+                            value: Binding(
+                                get: { model.note(id: noteID)?.category ?? "" },
+                                set: { model.updateCategory(for: noteID, category: $0) }
+                            ),
+                            badge: model.sourceBadge(note.categorySource)
                         )
-                    )
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                        metadataField(
+                            title: "文件夹",
+                            value: Binding(
+                                get: { model.folderName(for: noteID) },
+                                set: { model.updateFolder(for: noteID, folderName: $0) }
+                            ),
+                            badge: model.sourceBadge(note.folderSource)
+                        )
+                        metadataField(
+                            title: "标签",
+                            value: Binding(
+                                get: { model.tagNames(for: noteID) },
+                                set: { model.updateTags(for: noteID, tagText: $0) }
+                            ),
+                            badge: model.sourceBadge(note.tagsSource)
+                        )
+                    }
 
-                    Text("创建于 \(note.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if note.organizationStatus == .processing {
+                        Label("AI 正在整理标题、分类、标签和文件夹。", systemImage: "sparkles")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if let message = note.lastErrorMessage, note.organizationStatus == .failed {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    } else if let message = model.lastOperationMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                Spacer()
-                if note.organizationStatus == .processing {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-                Button("重新整理") {
-                    model.retryOrganizationForSelectedNote()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-
-            HStack(spacing: 16) {
-                metadataField(
-                    title: "主分类",
-                    value: Binding(
-                        get: { model.selectedNote?.category ?? "" },
-                        set: { model.updateCategory(for: note.id, category: $0) }
-                    ),
-                    badge: model.sourceBadge(note.categorySource)
-                )
-                metadataField(
-                    title: "文件夹",
-                    value: Binding(
-                        get: { model.selectedNoteFolderName },
-                        set: { model.updateFolder(for: note.id, folderName: $0) }
-                    ),
-                    badge: model.sourceBadge(note.folderSource)
-                )
-                metadataField(
-                    title: "标签",
-                    value: Binding(
-                        get: { model.selectedNoteTagsText },
-                        set: { model.updateTags(for: note.id, tagText: $0) }
-                    ),
-                    badge: model.sourceBadge(note.tagsSource)
-                )
-            }
-
-            if note.organizationStatus == .processing {
-                Label("AI 正在整理标题、分类、标签和文件夹。", systemImage: "sparkles")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if let message = note.lastErrorMessage, note.organizationStatus == .failed {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            } else if let message = model.lastOperationMessage {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(24)
             }
         }
-        .padding(24)
     }
 
     private func metadataField(title: String, value: Binding<String>, badge: String) -> some View {
