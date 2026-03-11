@@ -71,6 +71,59 @@ func adapterParsesFencedJSON() throws {
     #expect(payload.folderName == "项目")
 }
 
+@Test("模型返回夹带说明文本时也能提取 JSON")
+func adapterExtractsJSONObjectFromMixedContent() throws {
+    let content = """
+    下面是整理结果：
+    {
+      "title": "开发日记",
+      "category": "工作",
+      "tags": "Swift，AI；复盘",
+      "folderName": "项目/Whitecat"
+    }
+    已结束。
+    """
+
+    let payload = try OpenAICompatibleAdapter.parseContentString(content)
+    #expect(payload.title == "开发日记")
+    #expect(payload.tags == ["Swift", "AI", "复盘"])
+    #expect(payload.folderName == "项目 Whitecat")
+}
+
+@Test("远程模型地址必须使用 HTTPS，本机服务允许 HTTP")
+func adapterRejectsUnsafeRemoteBaseURL() throws {
+    let adapter = OpenAICompatibleAdapter()
+    let remoteProfile = AIProfileRecord(
+        displayName: "Unsafe",
+        providerKind: .custom,
+        baseURL: "http://example.com/v1",
+        model: "test-model",
+        isActive: true
+    )
+
+    #expect(throws: NoteOrganizerError.self) {
+        _ = try adapter.buildURLRequest(
+            for: OrganizationRequest(noteBody: "正文", existingFolders: [], existingTags: []),
+            profile: remoteProfile,
+            apiKey: "secret"
+        )
+    }
+
+    let localProfile = AIProfileRecord(
+        displayName: "Local",
+        providerKind: .custom,
+        baseURL: "http://localhost:11434/v1",
+        model: "test-model",
+        isActive: true
+    )
+    let request = try adapter.buildURLRequest(
+        for: OrganizationRequest(noteBody: "正文", existingFolders: [], existingTags: []),
+        profile: localProfile,
+        apiKey: "secret"
+    )
+    #expect(request.url?.absoluteString == "http://localhost:11434/v1/chat/completions")
+}
+
 @Test("缺少 API key 时会失败")
 func organizerFailsWithoutAPIKey() async {
     let organizer = NoteOrganizer(secretStore: InMemorySecretStore())

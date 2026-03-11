@@ -193,9 +193,7 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
         profile: AIProfileRecord,
         apiKey: String
     ) throws -> URLRequest {
-        guard let baseURL = URL(string: profile.trimmedBaseURL) else {
-            throw NoteOrganizerError.invalidBaseURL
-        }
+        let baseURL = try ProviderEndpointValidator.validatedBaseURL(from: profile.trimmedBaseURL)
 
         var endpoint = profile.trimmedRequestPath
         if !endpoint.hasPrefix("/") {
@@ -205,6 +203,7 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
         let url = baseURL.appending(path: endpoint)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 45
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
@@ -229,10 +228,19 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
         \(profile.trimmedOrganizationPrompt)
         """
 
+        let existingFolders = request.existingFolders
+            .deduplicatedTaxonomyNames()
+            .prefix(40)
+            .joined(separator: "、")
+        let existingTags = request.existingTags
+            .deduplicatedTaxonomyNames()
+            .prefix(40)
+            .joined(separator: "、")
+
         let prompt = """
         请根据这条笔记生成结构化整理结果。
-        已有文件夹: \(request.existingFolders.joined(separator: "、"))
-        已有标签: \(request.existingTags.joined(separator: "、"))
+        已有文件夹: \(existingFolders)
+        已有标签: \(existingTags)
 
         正文:
         \(request.noteBody)
@@ -280,11 +288,11 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
             throw NoteOrganizerError.invalidResponse
         }
 
-        let tags = (object["tags"] as? [String]) ?? []
+        let tags = normalizedTags(from: object["tags"])
         let payload = OrganizationPayload(
             title: object["title"] as? String ?? "",
             category: object["category"] as? String ?? "",
-            tags: tags.deduplicatedTaxonomyNames(),
+            tags: Array(tags.prefix(5)),
             folderName: ((object["folderName"] as? String) ?? "").replacingOccurrences(of: "/", with: " ")
         )
 
@@ -299,10 +307,79 @@ public struct OpenAICompatibleAdapter: LLMProviderAdapter {
     }
 
     public static func extractJSON(from content: String) -> String {
-        if content.hasPrefix("```"), let jsonStart = content.range(of: "{"), let jsonEnd = content.range(of: "}", options: .backwards) {
-            return String(content[jsonStart.lowerBound ... jsonEnd.upperBound])
+        if let extracted = firstJSONObject(in: content) {
+            return extracted
         }
         return content
+    }
+
+    private static func normalizedTags(from value: Any?) -> [String] {
+        if let tags = value as? [String] {
+            return tags.deduplicatedTaxonomyNames()
+        }
+        if let tags = value as? [Any] {
+            let strings = tags.compactMap { tag -> String? in
+                switch tag {
+                case let text as String:
+                    return text
+                case let number as NSNumber:
+                    return number.stringValue
+                default:
+                    return nil
+                }
+            }
+            return strings.deduplicatedTaxonomyNames()
+        }
+        if let tagString = value as? String {
+            return tagString.splitTaxonomyTerms().deduplicatedTaxonomyNames()
+        }
+        return []
+    }
+
+    private static func firstJSONObject(in content: String) -> String? {
+        var objectStart: String.Index?
+        var nestingDepth = 0
+        var isInsideString = false
+        var isEscaping = false
+
+        for index in content.indices {
+            let character = content[index]
+
+            if isEscaping {
+                isEscaping = false
+                continue
+            }
+
+            if character == "\\" {
+                isEscaping = isInsideString
+                continue
+            }
+
+            if character == "\"" {
+                isInsideString.toggle()
+                continue
+            }
+
+            guard !isInsideString else { continue }
+
+            if character == "{" {
+                if nestingDepth == 0 {
+                    objectStart = index
+                }
+                nestingDepth += 1
+                continue
+            }
+
+            if character == "}" {
+                guard nestingDepth > 0 else { continue }
+                nestingDepth -= 1
+                if nestingDepth == 0, let objectStart {
+                    return String(content[objectStart ... index])
+                }
+            }
+        }
+
+        return nil
     }
 }
 
@@ -349,5 +426,30 @@ private final class LockedBox<Value>: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return body(&value)
+    }
+}
+
+private enum ProviderEndpointValidator {
+    static func validatedBaseURL(from rawValue: String) throws -> URL {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() else {
+            throw NoteOrganizerError.invalidBaseURL
+        }
+
+        switch scheme {
+        case "https":
+            return url
+        case "http" where isLoopbackHost(url.host):
+            return url
+        default:
+            throw NoteOrganizerError.invalidBaseURL
+        }
+    }
+
+    private static func isLoopbackHost(_ host: String?) -> Bool {
+        guard let normalizedHost = host?.lowercased() else { return false }
+        return normalizedHost == "localhost"
+            || normalizedHost == "127.0.0.1"
+            || normalizedHost == "::1"
     }
 }

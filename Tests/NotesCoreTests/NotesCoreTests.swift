@@ -15,6 +15,12 @@ func taxonomyDeduplicatesAndCollapsesWhitespace() {
     #expect(tags == ["Swift", "AI Agent"])
 }
 
+@Test("标签输入支持中英文分隔符")
+func taxonomySplitSupportsLocalizedSeparators() {
+    let tags = "Swift，AI Agent; 产品\n复盘".splitTaxonomyTerms()
+    #expect(tags == ["Swift", "AI Agent", "产品", "复盘"])
+}
+
 @Test("AI 整理会复用现有文件夹并落库标签")
 func organizationPayloadReusesFoldersAndTags() {
     var snapshot = LibrarySnapshot(
@@ -84,6 +90,21 @@ func profileDecodingBackfillsDefaultPrompt() throws {
     let profile = try decoder.decode(AIProfileRecord.self, from: Data(json.utf8))
 
     #expect(profile.trimmedOrganizationPrompt == AIProfileRecord.defaultOrganizationPrompt)
+}
+
+@Test("运行时补默认配置不会覆盖已有笔记")
+func snapshotHydrationPreservesExistingNotes() {
+    let note = NoteRecord(bodyMarkdown: "保留这条笔记")
+    let snapshot = LibrarySnapshot(
+        notes: [note],
+        profiles: [],
+        preferences: AppPreferenceRecord(appcastURL: " ", releasePageURL: "")
+    ).hydratedForRuntime()
+
+    #expect(snapshot.notes == [note])
+    #expect(!snapshot.profiles.isEmpty)
+    #expect(snapshot.preferences.appcastURL == AppPreferenceRecord.defaultAppcastURL)
+    #expect(snapshot.preferences.releasePageURL == AppPreferenceRecord.defaultReleasePageURL)
 }
 
 @Test("旧偏好配置缺少外观字段时默认跟随系统")

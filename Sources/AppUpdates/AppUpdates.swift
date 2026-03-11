@@ -32,12 +32,18 @@ public enum UpdateCheckResult: Equatable, Sendable {
 
 public enum UpdateCheckerError: LocalizedError, Sendable {
     case invalidFeedURL
+    case unsafeFeedURL
+    case unsafeDownloadURL
     case malformedAppcast
 
     public var errorDescription: String? {
         switch self {
         case .invalidFeedURL:
             "更新源地址无效。"
+        case .unsafeFeedURL:
+            "更新源地址必须使用 HTTPS。"
+        case .unsafeDownloadURL:
+            "更新包地址必须使用 HTTPS。"
         case .malformedAppcast:
             "无法解析更新源。"
         }
@@ -117,15 +123,14 @@ public struct ManualUpdateChecker: Sendable {
         currentShortVersion: String,
         feedURLString: String
     ) async throws -> UpdateCheckResult {
-        guard let feedURL = URL(string: feedURLString), !feedURLString.isEmpty else {
-            throw UpdateCheckerError.invalidFeedURL
-        }
+        let feedURL = try UpdateURLValidator.validatedFeedURL(from: feedURLString)
 
         let (data, _) = try await session.data(from: feedURL)
         let items = try parser.parse(data: data)
         guard let latest = items.max(by: { $0.comparableVersion < $1.comparableVersion }) else {
             throw UpdateCheckerError.malformedAppcast
         }
+        let downloadURL = try UpdateURLValidator.validatedDownloadURL(latest.url)
 
         let installedVersion = AppcastVersion(
             shortVersion: currentShortVersion,
@@ -136,7 +141,7 @@ public struct ManualUpdateChecker: Sendable {
                 UpdateRelease(
                     version: SemanticVersion(latest.version),
                     shortVersion: latest.shortVersion,
-                    downloadURL: latest.url,
+                    downloadURL: downloadURL,
                     edSignature: latest.edSignature,
                     notesURL: latest.notesURL,
                     publicationDate: latest.publicationDate
@@ -145,6 +150,43 @@ public struct ManualUpdateChecker: Sendable {
         }
 
         return .noUpdate
+    }
+}
+
+public enum UpdateURLValidator {
+    public static func validatedFeedURL(from rawValue: String) throws -> URL {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let url = URL(string: trimmed) else {
+            throw UpdateCheckerError.invalidFeedURL
+        }
+        guard isTrustedHTTPSURL(url) else {
+            throw UpdateCheckerError.unsafeFeedURL
+        }
+        return url
+    }
+
+    public static func validatedDownloadURL(_ url: URL) throws -> URL {
+        guard isTrustedHTTPSURL(url) else {
+            throw UpdateCheckerError.unsafeDownloadURL
+        }
+        return url
+    }
+
+    public static func sanitizedBrowserURL(from rawValue: String) -> URL? {
+        guard let url = URL(string: rawValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+              isTrustedHTTPSURL(url)
+        else {
+            return nil
+        }
+        return url
+    }
+
+    private static func isTrustedHTTPSURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https" else { return false }
+        guard let host = url.host?.trimmingCharacters(in: .whitespacesAndNewlines), !host.isEmpty else {
+            return false
+        }
+        return true
     }
 }
 

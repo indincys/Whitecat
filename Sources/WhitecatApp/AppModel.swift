@@ -112,17 +112,8 @@ final class AppModel: ObservableObject {
 
     func bootstrap() async {
         do {
-            var loadedSnapshot = try await persistence.load()
-            if loadedSnapshot.profiles.isEmpty {
-                loadedSnapshot = .empty
-            }
-            if loadedSnapshot.preferences.appcastURL.isEmpty {
-                loadedSnapshot.preferences.appcastURL = AppPreferenceRecord.defaultAppcastURL
-            }
-            if loadedSnapshot.preferences.releasePageURL.isEmpty {
-                loadedSnapshot.preferences.releasePageURL = AppPreferenceRecord.defaultReleasePageURL
-            }
-            restoreSnapshot(loadedSnapshot)
+            let loadedSnapshot = try await persistence.load()
+            restoreSnapshot(loadedSnapshot.hydratedForRuntime())
         } catch {
             snapshot = .empty
             lastOperationMessage = "初始化存储失败：\(error.localizedDescription)"
@@ -232,11 +223,7 @@ final class AppModel: ObservableObject {
     }
 
     func updateTags(for noteID: UUID, tagText: String) {
-        let names = tagText
-            .split(separator: ",")
-            .map(String.init)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let names = tagText.splitTaxonomyTerms()
         let tags = snapshot.upsertTags(named: names)
         snapshot.updateNote(id: noteID) {
             $0.applyManualTags(ids: tags.map(\.id))
@@ -324,10 +311,12 @@ final class AppModel: ObservableObject {
 
     func reloadLibraryFromDisk(showMessage: Bool) async {
         do {
+            await flushAutosaveIfNeeded()
             let loadedSnapshot = try await persistence.load()
-            let didChange = loadedSnapshot != snapshot
+            let hydratedSnapshot = loadedSnapshot.hydratedForRuntime()
+            let didChange = hydratedSnapshot != snapshot
             if didChange {
-                restoreSnapshot(loadedSnapshot)
+                restoreSnapshot(hydratedSnapshot)
             }
             await refreshStorageStatus()
             if showMessage {
@@ -342,6 +331,7 @@ final class AppModel: ObservableObject {
 
     func syncLibraryNow() async {
         do {
+            await flushAutosaveIfNeeded()
             try await persistence.save(snapshot)
             await refreshStorageStatus()
             lastOperationMessage = isUsingICloudStorage ? "已同步到 iCloud，并保留本地镜像。" : "已同步到本地存储。"
@@ -393,7 +383,12 @@ final class AppModel: ObservableObject {
     }
 
     func openUpdateDownload(_ release: UpdateRelease) {
-        NSWorkspace.shared.open(release.downloadURL)
+        do {
+            let url = try UpdateURLValidator.validatedDownloadURL(release.downloadURL)
+            NSWorkspace.shared.open(url)
+        } catch {
+            lastOperationMessage = error.localizedDescription
+        }
     }
 
     func installUpdate(_ release: UpdateRelease) async {
@@ -430,7 +425,10 @@ final class AppModel: ObservableObject {
     }
 
     func openReleasePage() {
-        guard let url = URL(string: snapshot.preferences.releasePageURL), !snapshot.preferences.releasePageURL.isEmpty else { return }
+        guard let url = UpdateURLValidator.sanitizedBrowserURL(from: snapshot.preferences.releasePageURL) else {
+            lastOperationMessage = "Releases 页面地址无效，必须使用 HTTPS。"
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 
@@ -528,6 +526,7 @@ final class AppModel: ObservableObject {
         }
 
         syncSelectionWithVisibleNotes()
+        reschedulePersistedRetryJobs()
     }
 
     private func refreshStorageStatus() async {
@@ -707,5 +706,43 @@ final class AppModel: ObservableObject {
         }
 
         selectedNoteID = filteredNotes.first?.id
+    }
+
+    private func flushAutosaveIfNeeded() async {
+        let pendingAutosave = autosaveTask
+        await pendingAutosave?.value
+    }
+
+    private func reschedulePersistedRetryJobs() {
+        let pendingJobIDs = Set(snapshot.jobs.map(\.noteID))
+
+        for noteID in Array(retryTasks.keys) where !pendingJobIDs.contains(noteID) {
+            retryTasks[noteID]?.cancel()
+            retryTasks[noteID] = nil
+        }
+
+        var removedInvalidJobs = false
+        for job in snapshot.jobs {
+            guard let note = snapshot.note(id: job.noteID), note.needsOrganization else {
+                snapshot.resetJob(noteID: job.noteID)
+                retryTasks[job.noteID]?.cancel()
+                retryTasks[job.noteID] = nil
+                removedInvalidJobs = true
+                continue
+            }
+
+            guard organizationTasks[job.noteID] == nil else { continue }
+            if retryTasks[job.noteID] == nil {
+                scheduleRetry(
+                    for: job.noteID,
+                    nextRetryAt: job.nextRetryAt ?? .now,
+                    overwriteManualMetadata: false
+                )
+            }
+        }
+
+        if removedInvalidJobs {
+            scheduleAutosave(immediate: true)
+        }
     }
 }

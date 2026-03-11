@@ -15,6 +15,7 @@ final class QuickCaptureController: ObservableObject {
     private var appearanceObserver: AnyCancellable?
 
     private lazy var hotKeyMonitor = GlobalHotKeyMonitor(
+        identifier: 1,
         keyCode: UInt32(kVK_ANSI_N),
         modifiers: UInt32(optionKey | cmdKey)
     ) { [weak self] in
@@ -24,6 +25,7 @@ final class QuickCaptureController: ObservableObject {
     }
 
     private lazy var pinnedHotKeyMonitor = GlobalHotKeyMonitor(
+        identifier: 2,
         keyCode: UInt32(kVK_ANSI_N),
         modifiers: UInt32(controlKey | optionKey | cmdKey)
     ) { [weak self] in
@@ -166,22 +168,28 @@ private final class QuickCapturePanel: NSPanel {
 }
 
 private final class GlobalHotKeyMonitor {
+    private let identifier: UInt32
     private let keyCode: UInt32
     private let modifiers: UInt32
     private let handler: @Sendable () -> Void
-    private let hotKeyID = EventHotKeyID(signature: 0x57435451, id: 1)
 
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
 
     init(
+        identifier: UInt32,
         keyCode: UInt32,
         modifiers: UInt32,
         handler: @escaping @Sendable () -> Void
     ) {
+        self.identifier = identifier
         self.keyCode = keyCode
         self.modifiers = modifiers
         self.handler = handler
+    }
+
+    private var hotKeyID: EventHotKeyID {
+        EventHotKeyID(signature: 0x57435451, id: identifier)
     }
 
     func start() {

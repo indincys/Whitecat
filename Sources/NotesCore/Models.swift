@@ -729,6 +729,22 @@ public struct LibrarySnapshot: Codable, Equatable, Sendable {
 
     public static let empty = LibrarySnapshot()
 
+    public func hydratedForRuntime() -> LibrarySnapshot {
+        var snapshot = self
+
+        if snapshot.profiles.isEmpty {
+            snapshot.profiles = LibrarySnapshot.empty.profiles
+        }
+        if snapshot.preferences.appcastURL.nonEmptyTrimmed == nil {
+            snapshot.preferences.appcastURL = AppPreferenceRecord.defaultAppcastURL
+        }
+        if snapshot.preferences.releasePageURL.nonEmptyTrimmed == nil {
+            snapshot.preferences.releasePageURL = AppPreferenceRecord.defaultReleasePageURL
+        }
+
+        return snapshot
+    }
+
     public func note(id: UUID?) -> NoteRecord? {
         guard let id else { return nil }
         return notes.first(where: { $0.id == id })
@@ -1015,6 +1031,12 @@ public extension String {
 
     func collapsedWhitespace() -> String {
         replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+    }
+
+    func splitTaxonomyTerms() -> [String] {
+        components(separatedBy: CharacterSet(charactersIn: ",，;；\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     var isBlank: Bool {

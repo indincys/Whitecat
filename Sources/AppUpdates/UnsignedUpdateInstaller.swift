@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 
 public enum UnsignedUpdateInstallerError: LocalizedError, Sendable {
+    case unsafeDownloadURL
     case missingPublicKey
     case missingArchiveSignature
     case invalidPublicKey
@@ -9,10 +10,13 @@ public enum UnsignedUpdateInstallerError: LocalizedError, Sendable {
     case invalidArchiveResponse
     case extractionFailed(String)
     case stagedAppNotFound
+    case stagedAppBundleMismatch(expected: String, actual: String?)
     case installerLaunchFailed(String)
 
     public var errorDescription: String? {
         switch self {
+        case .unsafeDownloadURL:
+            "更新包地址不安全，必须使用 HTTPS。"
         case .missingPublicKey:
             "当前应用缺少内置更新公钥，无法校验更新包。"
         case .missingArchiveSignature:
@@ -27,6 +31,8 @@ public enum UnsignedUpdateInstallerError: LocalizedError, Sendable {
             "更新包解压失败：\(message)"
         case .stagedAppNotFound:
             "下载后的更新包里没有找到可安装的应用。"
+        case let .stagedAppBundleMismatch(expected, actual):
+            "更新包里的应用标识与当前应用不一致（期望 \(expected)，实际 \(actual ?? "未知")）。"
         case let .installerLaunchFailed(message):
             "无法启动更新安装器：\(message)"
         }
@@ -47,6 +53,13 @@ public final class UnsignedUpdateInstaller: @unchecked Sendable {
         bundle: Bundle = .main,
         processID: Int32 = ProcessInfo.processInfo.processIdentifier
     ) async throws {
+        let downloadURL: URL
+        do {
+            downloadURL = try UpdateURLValidator.validatedDownloadURL(release.downloadURL)
+        } catch {
+            throw UnsignedUpdateInstallerError.unsafeDownloadURL
+        }
+
         guard let publicKey = bundle.infoDictionary?["SUPublicEDKey"] as? String,
               !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
@@ -59,15 +72,22 @@ public final class UnsignedUpdateInstaller: @unchecked Sendable {
             throw UnsignedUpdateInstallerError.missingArchiveSignature
         }
 
-        let (temporaryArchiveURL, response) = try await session.download(from: release.downloadURL)
+        let stagingRoot = fileManager.temporaryDirectory
+            .appendingPathComponent("whitecat-update-\(UUID().uuidString)", isDirectory: true)
+        let archiveURL = stagingRoot.appendingPathComponent("update.zip")
+        var shouldCleanStagingRoot = true
+        defer {
+            if shouldCleanStagingRoot {
+                try? fileManager.removeItem(at: stagingRoot)
+            }
+        }
+
+        let (temporaryArchiveURL, response) = try await session.download(from: downloadURL)
         if let httpResponse = response as? HTTPURLResponse,
            !(200 ..< 300).contains(httpResponse.statusCode) {
             throw UnsignedUpdateInstallerError.invalidArchiveResponse
         }
 
-        let stagingRoot = fileManager.temporaryDirectory
-            .appendingPathComponent("whitecat-update-\(UUID().uuidString)", isDirectory: true)
-        let archiveURL = stagingRoot.appendingPathComponent("update.zip")
         try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
         try fileManager.moveItem(at: temporaryArchiveURL, to: archiveURL)
 
@@ -84,6 +104,7 @@ public final class UnsignedUpdateInstaller: @unchecked Sendable {
         guard let stagedAppURL = try Self.findAppBundle(in: extractedRoot, fileManager: fileManager) else {
             throw UnsignedUpdateInstallerError.stagedAppNotFound
         }
+        try Self.validateStagedAppBundle(at: stagedAppURL, matches: bundle)
 
         let targetAppURL = bundle.bundleURL.standardizedFileURL
         let installerURL = try Self.writeInstallerScript(
@@ -97,6 +118,7 @@ public final class UnsignedUpdateInstaller: @unchecked Sendable {
         } else {
             try Self.launchInstallerProcessWithAuthorization(arguments: installerArguments)
         }
+        shouldCleanStagingRoot = false
     }
 
 }
@@ -243,5 +265,19 @@ extension UnsignedUpdateInstaller {
 
     private static func appleScriptString(_ value: String) -> String {
         "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
+    }
+
+    static func validateStagedAppBundle(at stagedAppURL: URL, matches bundle: Bundle) throws {
+        guard let expectedBundleIdentifier = bundle.bundleIdentifier, !expectedBundleIdentifier.isEmpty else {
+            return
+        }
+
+        let actualBundleIdentifier = Bundle(url: stagedAppURL)?.bundleIdentifier
+        guard actualBundleIdentifier == expectedBundleIdentifier else {
+            throw UnsignedUpdateInstallerError.stagedAppBundleMismatch(
+                expected: expectedBundleIdentifier,
+                actual: actualBundleIdentifier
+            )
+        }
     }
 }

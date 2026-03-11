@@ -93,6 +93,25 @@ func manualUpdateCheckerPrefersShortVersionThenBuildVersion() async throws {
     #expect(result == .noUpdate)
 }
 
+@Test("更新源地址必须使用 HTTPS")
+func manualUpdateCheckerRejectsInsecureFeedURL() async {
+    let checker = ManualUpdateChecker()
+
+    await #expect(throws: UpdateCheckerError.self) {
+        _ = try await checker.check(
+            currentBuildVersion: "1",
+            currentShortVersion: "1.0.0",
+            feedURLString: "http://example.com/appcast.xml"
+        )
+    }
+}
+
+@Test("浏览器打开地址会清理空白并拒绝非 HTTPS")
+func updateURLValidatorSanitizesBrowserURL() {
+    #expect(UpdateURLValidator.sanitizedBrowserURL(from: " https://example.com/releases ")?.absoluteString == "https://example.com/releases")
+    #expect(UpdateURLValidator.sanitizedBrowserURL(from: "javascript:alert(1)") == nil)
+}
+
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var responseData = Data()
 
