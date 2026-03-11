@@ -30,7 +30,6 @@ jobs:
 
       - name: Validate release secrets
         env:
-          APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
           MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
@@ -41,7 +40,6 @@ jobs:
           TEAM_BUNDLE_PREFIX: ${{ secrets.TEAM_BUNDLE_PREFIX }}
         run: |
           required=(
-            APPLE_DEVELOPER_IDENTITY
             MACOS_CERTIFICATE_P12_BASE64
             MACOS_CERTIFICATE_PASSWORD
             APPLE_NOTARY_APPLE_ID
@@ -70,6 +68,15 @@ jobs:
           security import /tmp/build-cert.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
 
+      - name: Resolve signing identity
+        run: |
+          SIGNING_IDENTITY="$(security find-identity -v -p codesigning build.keychain | sed -n 's/.*"\(Developer ID Application: .*([^)]*)\)"/\1/p' | head -n 1)"
+          if [[ -z "$SIGNING_IDENTITY" ]]; then
+            echo "Unable to resolve Developer ID Application identity from imported certificate." >&2
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
       - name: Render entitlements
         env:
           TEAM_BUNDLE_PREFIX: ${{ secrets.TEAM_BUNDLE_PREFIX }}
@@ -83,7 +90,7 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
           APPCAST_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/appcast.xml
           SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
-          SIGNING_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
+          SIGNING_IDENTITY: ${{ env.SIGNING_IDENTITY }}
           ENTITLEMENTS_PATH: Configs/Whitecat.entitlements
         run: ./Scripts/package_app.sh
 
