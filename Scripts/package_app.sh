@@ -20,6 +20,7 @@ SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-}"
 INFO_TEMPLATE="$ROOT_DIR/Configs/Info.plist.template"
 SPARKLE_FRAMEWORK="$ROOT_DIR/Vendor/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+APP_ICON_PATH="$ROOT_DIR/Assets/AppIcon/Whitecat.icns"
 USE_HARDENED_RUNTIME=1
 
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
@@ -28,6 +29,10 @@ fi
 
 mkdir -p "$OUTPUT_DIR" "$RELEASES_DIR" "$SWIFT_CACHE_DIR" "$CLANG_CACHE_DIR"
 rm -rf "$APP_DIR"
+
+if [[ ! -f "$APP_ICON_PATH" ]]; then
+  swift "$ROOT_DIR/Scripts/generate_app_icon.swift"
+fi
 
 env \
   DEVELOPER_DIR="$DEVELOPER_DIR" \
@@ -48,6 +53,7 @@ mkdir -p \
 
 cp "$BIN_PATH/WhitecatApp" "$APP_DIR/Contents/MacOS/$EXECUTABLE_NAME"
 cp -R "$SPARKLE_FRAMEWORK" "$APP_DIR/Contents/Frameworks/"
+cp "$APP_ICON_PATH" "$APP_DIR/Contents/Resources/Whitecat.icns"
 
 # SwiftPM-linked binaries don't automatically search inside an app bundle's Frameworks directory.
 # Add the standard app-bundle rpath before signing so Sparkle can be resolved at launch.
