@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published var searchText: String = ""
     @Published var updateState: UpdateState = .idle
     @Published var storageLocationDescription: String = "正在读取..."
+    @Published var storageStatusDescription: String = "正在检测 iCloud 状态..."
+    @Published private(set) var isUsingICloudStorage: Bool = false
     @Published var lastOperationMessage: String?
 
     enum UpdateState: Equatable {
@@ -116,7 +118,7 @@ final class AppModel: ObservableObject {
             if loadedSnapshot.preferences.releasePageURL.isEmpty {
                 loadedSnapshot.preferences.releasePageURL = AppPreferenceRecord.defaultReleasePageURL
             }
-            snapshot = loadedSnapshot
+            restoreSnapshot(loadedSnapshot)
         } catch {
             snapshot = .empty
             lastOperationMessage = "初始化存储失败：\(error.localizedDescription)"
@@ -124,17 +126,10 @@ final class AppModel: ObservableObject {
 
         applyAppearancePreference()
         configureSparkleUpdater()
-
-        if let firstNote = filteredNotes.first {
-            selectedNoteID = firstNote.id
-        }
         if snapshot.notes.isEmpty {
             createNote()
         }
-        if let url = try? await persistence.storageRootURL() {
-            storageRootURL = url
-            storageLocationDescription = url.path(percentEncoded: false)
-        }
+        await refreshStorageStatus()
     }
 
     func createNote() {
@@ -178,6 +173,7 @@ final class AppModel: ObservableObject {
         let previous = selectedNoteID
         selectedNoteID = noteID
         if let previous, previous != noteID {
+            scheduleAutosave(immediate: true)
             queueOrganization(
                 noteID: previous,
                 overwriteManualMetadata: false,
@@ -187,6 +183,7 @@ final class AppModel: ObservableObject {
     }
 
     func handleSceneDeactivation() {
+        scheduleAutosave(immediate: true)
         if let selectedNoteID {
             queueOrganization(
                 noteID: selectedNoteID,
@@ -194,6 +191,10 @@ final class AppModel: ObservableObject {
                 delay: automaticOrganizationGraceInterval
             )
         }
+    }
+
+    func handleSceneActivation() async {
+        await reloadLibraryFromDisk(showMessage: false)
     }
 
     func updateBody(for noteID: UUID, body: String) {
@@ -304,6 +305,34 @@ final class AppModel: ObservableObject {
     func openStorageLocation() {
         guard let url = storageRootURL else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    func reloadLibraryFromDisk(showMessage: Bool) async {
+        do {
+            let loadedSnapshot = try await persistence.load()
+            let didChange = loadedSnapshot != snapshot
+            if didChange {
+                restoreSnapshot(loadedSnapshot)
+            }
+            await refreshStorageStatus()
+            if showMessage {
+                lastOperationMessage = didChange ? "已从磁盘重新载入笔记库。" : "磁盘里的笔记库已经是最新。"
+            }
+        } catch {
+            if showMessage {
+                lastOperationMessage = "重新载入失败：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    func syncLibraryNow() async {
+        do {
+            try await persistence.save(snapshot)
+            await refreshStorageStatus()
+            lastOperationMessage = isUsingICloudStorage ? "已同步到 iCloud，并保留本地镜像。" : "已同步到本地存储。"
+        } catch {
+            lastOperationMessage = "同步失败：\(error.localizedDescription)"
+        }
     }
 
     func checkForUpdates() async {
@@ -467,6 +496,43 @@ final class AppModel: ObservableObject {
 
     private func applyAppearancePreference() {
         NSApp.appearance = appearancePreference.nsAppearance
+    }
+
+    private func restoreSnapshot(_ loadedSnapshot: LibrarySnapshot) {
+        let previousSelection = selectedNoteID
+        snapshot = loadedSnapshot
+
+        if let previousSelection, snapshot.note(id: previousSelection) != nil {
+            selectedNoteID = previousSelection
+        } else {
+            selectedNoteID = filteredNotes.first?.id ?? snapshot.notes.first?.id
+        }
+    }
+
+    private func refreshStorageStatus() async {
+        do {
+            let status = try await persistence.storageStatus()
+            storageRootURL = status.activeRootURL
+            storageLocationDescription = status.activeRootURL.path(percentEncoded: false)
+            storageStatusDescription = storageStatusMessage(for: status)
+            isUsingICloudStorage = status.backend == .iCloud
+        } catch {
+            storageStatusDescription = "无法读取存储状态：\(error.localizedDescription)"
+            storageLocationDescription = "无法读取存储目录"
+            isUsingICloudStorage = false
+        }
+    }
+
+    private func storageStatusMessage(for status: StorageLocationStatus) -> String {
+        switch status.backend {
+        case .iCloud:
+            return "当前使用 iCloud 存储，自动保留本地镜像备份。"
+        case .local:
+            if status.isICloudAvailable {
+                return "已检测到 iCloud，但当前仍在使用本地存储。"
+            }
+            return "当前未连上 iCloud，正在使用本地存储。"
+        }
     }
 
     private func queueOrganization(noteID: UUID, overwriteManualMetadata: Bool, delay: TimeInterval) {

@@ -13,7 +13,7 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250)
         } content: {
             noteList
-                .navigationSplitViewColumnWidth(min: 260, ideal: 320)
+                .navigationSplitViewColumnWidth(min: 300, ideal: 360)
         } detail: {
             detailPane
                 .navigationSplitViewColumnWidth(min: 560, ideal: 760)
@@ -28,84 +28,125 @@ struct ContentView: View {
             editorShouldFocus = true
         }
         .onChange(of: scenePhase) { _, newValue in
-            if newValue != .active {
+            switch newValue {
+            case .active:
+                Task {
+                    await model.handleSceneActivation()
+                }
+            case .background, .inactive:
                 model.handleSceneDeactivation()
+            @unknown default:
+                break
             }
         }
     }
 
     private var sidebar: some View {
-        List(selection: Binding(
-            get: { Optional.some(model.selectedScope) },
-            set: {
-                guard let value = $0 else { return }
-                model.changeScope(value)
-            }
-        )) {
-            Section("视图") {
-                Label("全部笔记", systemImage: "note.text")
-                    .tag(Optional.some(LibrarySidebarScope.all))
-                Label("待整理", systemImage: "wand.and.stars.inverse")
-                    .tag(Optional.some(LibrarySidebarScope.pending))
-                Label("最近", systemImage: "clock")
-                    .tag(Optional.some(LibrarySidebarScope.recent))
-            }
-
-            Section("文件夹") {
-                ForEach(model.snapshot.folders) { folder in
-                    Label(folder.name, systemImage: "folder")
-                        .tag(Optional.some(LibrarySidebarScope.folder(folder.id)))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                sidebarSection("视图") {
+                    sidebarRow("全部笔记", systemImage: "note.text", scope: .all)
+                    sidebarRow("待整理", systemImage: "wand.and.stars.inverse", scope: .pending)
+                    sidebarRow("最近", systemImage: "clock", scope: .recent)
                 }
-            }
 
-            Section("标签") {
-                ForEach(model.snapshot.tags) { tag in
-                    Label(tag.name, systemImage: "tag")
-                        .tag(Optional.some(LibrarySidebarScope.tag(tag.id)))
-                }
-            }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
-    }
-
-    private var noteList: some View {
-        List(selection: Binding(
-            get: { model.selectedNoteID },
-            set: { model.changeSelection(to: $0) }
-        )) {
-            ForEach(model.filteredNotes) { note in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(note.displayTitle)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Spacer()
-                        Text(note.updatedAt, style: .date)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(note.bodyPreview)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    HStack(spacing: 8) {
-                        capsule(note.organizationStatus.rawValue, color: note.organizationStatus == .organized ? .green : .orange)
-                        capsule(model.folderName(for: note), color: .gray)
-                        if let category = note.category, !category.isEmpty {
-                            capsule(category, color: .blue)
+                sidebarSection("文件夹") {
+                    if model.snapshot.folders.isEmpty {
+                        emptySidebarText("还没有文件夹")
+                    } else {
+                        ForEach(model.snapshot.folders) { folder in
+                            sidebarRow(folder.name, systemImage: "folder", scope: .folder(folder.id))
                         }
                     }
                 }
-                .padding(.vertical, 6)
-                .tag(Optional.some(note.id))
+
+                sidebarSection("标签") {
+                    if model.snapshot.tags.isEmpty {
+                        emptySidebarText("还没有标签")
+                    } else {
+                        ForEach(model.snapshot.tags) { tag in
+                            sidebarRow(tag.name, systemImage: "tag", scope: .tag(tag.id))
+                        }
+                    }
+                }
             }
+            .padding(14)
         }
-        .listStyle(.inset)
-        .searchable(text: $model.searchText, prompt: "搜索标题、正文、标签或文件夹")
-        .scrollContentBackground(.hidden)
-        .toolbar {
-            ToolbarItemGroup {
+        .background(WhitecatTheme.workspaceBackground)
+    }
+
+    private var noteList: some View {
+        VStack(spacing: 0) {
+            noteListHeader
+            Divider()
+            List(selection: Binding(
+                get: { model.selectedNoteID },
+                set: { model.changeSelection(to: $0) }
+            )) {
+                ForEach(model.filteredNotes) { note in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(note.displayTitle)
+                                .font(.headline)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(note.updatedAt, style: .date)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(note.bodyPreview)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                        HStack(spacing: 8) {
+                            capsule(note.organizationStatus.rawValue, color: note.organizationStatus == .organized ? .green : .orange)
+                            capsule(model.folderName(for: note), color: .gray)
+                            if let category = note.category, !category.isEmpty {
+                                capsule(category, color: .blue)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .tag(Optional.some(note.id))
+                }
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+        }
+        .background(WhitecatTheme.workspaceBackground)
+    }
+
+    private var noteListHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                    TextField("搜索标题、正文、标签或文件夹", text: $model.searchText)
+                        .textFieldStyle(.plain)
+                    if !model.searchText.isEmpty {
+                        Button {
+                            model.searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                SettingsLink {
+                    Label("设置", systemImage: "gearshape")
+                        .labelStyle(.iconOnly)
+                        .frame(width: 34, height: 34)
+                }
+                .buttonStyle(.bordered)
+            }
+
+            HStack(spacing: 10) {
                 Button {
                     model.createNote()
                 } label: {
@@ -127,14 +168,11 @@ struct ContentView: View {
                     Label("删除", systemImage: "trash")
                 }
                 .disabled(model.selectedNote == nil)
-
-                Button {
-                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                } label: {
-                    Label("设置", systemImage: "gearshape")
-                }
             }
+            .buttonStyle(.bordered)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 
     private var detailPane: some View {
@@ -161,6 +199,53 @@ struct ContentView: View {
                     .background(WhitecatTheme.detailPaneBackground())
             }
         }
+    }
+
+    private func sidebarSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+            VStack(spacing: 4) {
+                content()
+            }
+        }
+    }
+
+    private func sidebarRow(_ title: String, systemImage: String, scope: LibrarySidebarScope) -> some View {
+        Button {
+            model.changeScope(scope)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .frame(width: 18)
+                    .foregroundStyle(isSelected(scope) ? WhitecatTheme.accentColor : .secondary)
+                Text(title)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isSelected(scope) ? WhitecatTheme.accentColor.opacity(0.14) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func emptySidebarText(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+    }
+
+    private func isSelected(_ scope: LibrarySidebarScope) -> Bool {
+        model.selectedScope == scope
     }
 
     private func capsule(_ text: String, color: Color) -> some View {

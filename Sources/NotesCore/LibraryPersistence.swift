@@ -1,5 +1,32 @@
 import Foundation
 
+public enum StorageBackend: String, Equatable, Sendable {
+    case iCloud
+    case local
+}
+
+public struct StorageLocationStatus: Equatable, Sendable {
+    public var backend: StorageBackend
+    public var activeRootURL: URL
+    public var localRootURL: URL
+    public var iCloudRootURL: URL?
+    public var isICloudAvailable: Bool
+
+    public init(
+        backend: StorageBackend,
+        activeRootURL: URL,
+        localRootURL: URL,
+        iCloudRootURL: URL?,
+        isICloudAvailable: Bool
+    ) {
+        self.backend = backend
+        self.activeRootURL = activeRootURL
+        self.localRootURL = localRootURL
+        self.iCloudRootURL = iCloudRootURL
+        self.isICloudAvailable = isICloudAvailable
+    }
+}
+
 public actor LibraryPersistence {
     public struct Configuration: Sendable {
         public var appDirectoryName: String
@@ -40,7 +67,14 @@ public actor LibraryPersistence {
     public func load() throws -> LibrarySnapshot {
         let candidates = try loadCandidates()
         if let selected = candidates.sorted(by: Self.candidateSort).first {
-            resolvedBaseDirectoryURL = selected.baseDirectoryURL
+            if let iCloudBaseDirectoryURL {
+                if !Self.sameDirectory(lhs: selected.baseDirectoryURL, rhs: iCloudBaseDirectoryURL) {
+                    try persist(selected.snapshot, at: iCloudBaseDirectoryURL)
+                }
+                resolvedBaseDirectoryURL = iCloudBaseDirectoryURL
+            } else {
+                resolvedBaseDirectoryURL = selected.baseDirectoryURL
+            }
             return selected.snapshot
         }
 
@@ -50,13 +84,12 @@ public actor LibraryPersistence {
     }
 
     public func save(_ snapshot: LibrarySnapshot) throws {
-        let fileURL = try metadataFileURL()
-        let backupURL = try backupFileURL()
-        let directoryURL = fileURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
-        let data = try encoder.encode(snapshot)
-        try data.write(to: fileURL, options: .atomic)
-        try data.write(to: backupURL, options: .atomic)
+        let status = try storageStatus()
+        try persist(snapshot, at: status.activeRootURL)
+
+        if status.backend == .iCloud {
+            try persist(snapshot, at: status.localRootURL)
+        }
     }
 
     public func storageRootURL() throws -> URL {
@@ -66,6 +99,26 @@ public actor LibraryPersistence {
         let preferredDirectory = try preferredBaseDirectoryURL()
         resolvedBaseDirectoryURL = preferredDirectory
         return preferredDirectory
+    }
+
+    public func storageStatus() throws -> StorageLocationStatus {
+        let localRootURL = try applicationSupportBaseDirectoryURL()
+        let activeRootURL = try storageRootURL()
+        let iCloudRootURL = iCloudBaseDirectoryURL
+        let backend: StorageBackend = if let iCloudRootURL,
+                                         Self.sameDirectory(lhs: activeRootURL, rhs: iCloudRootURL) {
+            .iCloud
+        } else {
+            .local
+        }
+
+        return StorageLocationStatus(
+            backend: backend,
+            activeRootURL: activeRootURL,
+            localRootURL: localRootURL,
+            iCloudRootURL: iCloudRootURL,
+            isICloudAvailable: iCloudRootURL != nil
+        )
     }
 
     private func metadataFileURL() throws -> URL {
@@ -141,6 +194,7 @@ public actor LibraryPersistence {
 
         for baseDirectoryURL in try candidateBaseDirectoryURLs() {
             for candidateURL in [metadataFileURL(in: baseDirectoryURL), backupFileURL(in: baseDirectoryURL)] {
+                try? fileManager.startDownloadingUbiquitousItem(at: candidateURL)
                 guard fileManager.fileExists(atPath: candidateURL.path(percentEncoded: false)) else { continue }
                 sawExistingFile = true
 
@@ -174,6 +228,16 @@ public actor LibraryPersistence {
         return attributes?[.modificationDate] as? Date ?? .distantPast
     }
 
+    private func persist(_ snapshot: LibrarySnapshot, at baseDirectoryURL: URL) throws {
+        let fileURL = metadataFileURL(in: baseDirectoryURL)
+        let backupURL = backupFileURL(in: baseDirectoryURL)
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
+        let data = try encoder.encode(snapshot)
+        try data.write(to: fileURL, options: .atomic)
+        try data.write(to: backupURL, options: .atomic)
+    }
+
     private static func candidateSort(lhs: LoadedSnapshotCandidate, rhs: LoadedSnapshotCandidate) -> Bool {
         if lhs.modifiedAt != rhs.modifiedAt {
             return lhs.modifiedAt > rhs.modifiedAt
@@ -182,6 +246,10 @@ public actor LibraryPersistence {
             return !lhs.isBackup
         }
         return lhs.fileURL.path(percentEncoded: false) < rhs.fileURL.path(percentEncoded: false)
+    }
+
+    private static func sameDirectory(lhs: URL, rhs: URL) -> Bool {
+        lhs.standardizedFileURL.path(percentEncoded: false) == rhs.standardizedFileURL.path(percentEncoded: false)
     }
 }
 
