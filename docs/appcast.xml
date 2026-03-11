@@ -3,6 +3,20 @@
     <channel>
         <title>Whitecat</title>
         <item>
+            <title>0.1.8</title>
+            <pubDate>Wed, 11 Mar 2026 20:31:33 +0800</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/indincys/Whitecat/releases/tag/v0.1.8</sparkle:fullReleaseNotesLink>
+            <sparkle:version>14</sparkle:version>
+            <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="plain-text"><![CDATA[Handle missing old update feed directory
+Rotate Sparkle release key
+Add in-app auto update flow
+Automate GitHub releases and Sparkle
+]]></description>
+            <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.8/Whitecat-0.1.8.zip" length="1574085" type="application/octet-stream" sparkle:edSignature="XgQBwxHkRFtl142mpl1Bqk3Z0FOtWOgqghQFxf2PqRu/TElP5xO9Cb8EiqE2efTcjTzVHtkoBZBJn2EIiriXBQ=="/>
+        </item>
+        <item>
             <title>0.1.4</title>
             <pubDate>Wed, 11 Mar 2026 03:56:29 +0800</pubDate>
             <sparkle:version>5</sparkle:version>
