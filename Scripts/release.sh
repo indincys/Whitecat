@@ -24,7 +24,6 @@ Usage: ./Scripts/release.sh <version>
 
 Example:
   CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-  PRIVATE_ED_KEY_PATH="$HOME/.config/whitecat/sparkle_private_key" \
   TEAM_BUNDLE_PREFIX="TEAMID" \
   ./Scripts/release.sh 0.1.8
 
@@ -34,7 +33,7 @@ Environment:
   DRY_RUN              Optional. Set to 1 to stop before git push and GitHub release upload.
   GITHUB_TOKEN         Optional. Used for GitHub API calls if set.
   PRIVATE_ED_KEY       Optional. Sparkle private key content.
-  PRIVATE_ED_KEY_PATH  Optional. Path to the Sparkle private key file.
+  PRIVATE_ED_KEY_PATH  Optional. Path to the Sparkle private key file. Defaults to ~/.config/whitecat/sparkle_private_key if present.
   RELEASE_NOTES_FILE   Optional. Text file with one change per line.
   TEAM_BUNDLE_PREFIX   Required for signed releases unless ENTITLEMENTS_PATH is set.
   ENTITLEMENTS_PATH    Optional. Overrides the generated entitlements path.
@@ -71,8 +70,13 @@ BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD)}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 ENTITLEMENTS_PATH="${ENTITLEMENTS_PATH:-}"
 DRY_RUN="${DRY_RUN:-0}"
+DEFAULT_PRIVATE_KEY_PATH="${HOME}/.config/whitecat/sparkle_private_key"
 GH_USER=""
 GH_PASS=""
+
+if [[ -z "${PRIVATE_ED_KEY:-}" && -z "${PRIVATE_ED_KEY_PATH:-}" && -f "$DEFAULT_PRIVATE_KEY_PATH" ]]; then
+  PRIVATE_ED_KEY_PATH="$DEFAULT_PRIVATE_KEY_PATH"
+fi
 
 if [[ ! "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
   fail "Version must use semantic versioning, for example 0.1.8."
@@ -181,7 +185,7 @@ cp "$NORMALIZED_NOTES_PATH" "$RELEASES_DIR/${APP_NAME}-${VERSION}.txt"
 
 VERSION="$VERSION" \
 BUILD_NUMBER="$BUILD_NUMBER" \
-CODESIGN_IDENTITY="$CODESIGN_IDENTITY" \
+SIGNING_IDENTITY="$CODESIGN_IDENTITY" \
 ENTITLEMENTS_PATH="$ENTITLEMENTS_PATH" \
 APPCAST_URL="$APPCAST_URL" \
 OUTPUT_DIR="$OUTPUT_DIR" \
