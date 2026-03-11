@@ -29,8 +29,8 @@
 	<key>SUEnableAutomaticChecks</key>
 	<false/>
 	<key>SUFeedURL</key>
-	<string>__APPCAST_URL__</string>
+	<string>https://indincys.github.io/Whitecat/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>__SPARKLE_PUBLIC_ED_KEY__</string>
+	<string>nkAdYJH7Bm5kPMT3OiyJW8fyEnFwtNIt/kyBq/0gVmo=</string>
 </dict>
 </plist>
