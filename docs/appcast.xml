@@ -3,6 +3,18 @@
     <channel>
         <title>Whitecat</title>
         <item>
+            <title>0.1.10</title>
+            <pubDate>Thu, 12 Mar 2026 01:01:14 +0800</pubDate>
+            <sparkle:fullReleaseNotesLink>https://github.com/indincys/Whitecat/releases/tag/v0.1.10</sparkle:fullReleaseNotesLink>
+            <sparkle:version>19</sparkle:version>
+            <sparkle:shortVersionString>0.1.10</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="plain-text"><![CDATA[修复笔记切换 搜索 与Markdown渲染
+Add green app icon
+]]></description>
+            <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.10/Whitecat-0.1.10.zip" length="2686858" type="application/octet-stream" sparkle:edSignature="Kh+whSZXeQuDF8y/f6ORRaOGid+32LX6UAOwRri8oVdkUGH9byX7SnX6ro0kpbHVDQBY3FXWCIq755Bn9KCbAg=="/>
+        </item>
+        <item>
             <title>0.1.9</title>
             <pubDate>Wed, 11 Mar 2026 23:56:27 +0800</pubDate>
             <sparkle:fullReleaseNotesLink>https://github.com/indincys/Whitecat/releases/tag/v0.1.9</sparkle:fullReleaseNotesLink>
@@ -26,14 +38,6 @@ Add in-app auto update flow
 Automate GitHub releases and Sparkle
 ]]></description>
             <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.8/Whitecat-0.1.8.zip" length="1574085" type="application/octet-stream" sparkle:edSignature="XgQBwxHkRFtl142mpl1Bqk3Z0FOtWOgqghQFxf2PqRu/TElP5xO9Cb8EiqE2efTcjTzVHtkoBZBJn2EIiriXBQ=="/>
-        </item>
-        <item>
-            <title>0.1.4</title>
-            <pubDate>Wed, 11 Mar 2026 03:56:29 +0800</pubDate>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/indincys/Whitecat/releases/download/v0.1.4/Whitecat-0.1.4.zip" length="1798570" type="application/octet-stream" sparkle:edSignature="0WRXoy8lDIBZopg0Hi4i/pfwJ28wa7VjcLjdLS2/z7A45nZeNnOz5nZCp+RiEuD9mmAspnpSKh2VceuGt4dwAw=="/>
         </item>
     </channel>
 </rss>
