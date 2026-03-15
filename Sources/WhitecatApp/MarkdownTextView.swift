@@ -81,6 +81,7 @@ struct MarkdownTextView: NSViewRepresentable {
 
         private var isApplyingStyle = false
         private var lastAppliedFocusToken = Int.min
+        private var lastCursorLineRange = NSRange(location: NSNotFound, length: 0)
         private var lastRender = MarkdownInlineStyler.RenderResult(
             attributedString: NSAttributedString(string: ""),
             hiddenRanges: []
@@ -105,6 +106,18 @@ struct MarkdownTextView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView, !isApplyingStyle, textView.markedRange().location == NSNotFound else { return }
+
+            let nsString = textView.string as NSString
+            let cursorLocation = textView.selectedRange().location
+            if nsString.length > 0 {
+                let clampedCursor = min(cursorLocation, nsString.length - 1)
+                let cursorLineRange = nsString.lineRange(for: NSRange(location: clampedCursor, length: 0))
+                if cursorLineRange != lastCursorLineRange {
+                    lastCursorLineRange = cursorLineRange
+                    reapplyHiddenRanges(to: textView)
+                }
+            }
+
             refreshTypingAttributes(for: textView)
         }
 
@@ -143,7 +156,16 @@ struct MarkdownTextView: NSViewRepresentable {
             textView.textStorage?.beginEditing()
             textView.textStorage?.setAttributedString(rendered.attributedString)
             textView.textStorage?.endEditing()
-            applyHiddenRanges(rendered.hiddenRanges, to: textView)
+
+            let cursorLoc = preserveSelection ? previousSelection.location : textView.selectedRange().location
+            let effectiveHiddenRanges = hiddenRangesExcludingCursorLine(
+                rendered.hiddenRanges,
+                cursorLocation: cursorLoc,
+                in: textView.string
+            )
+            updateCursorLineRange(cursorLocation: cursorLoc, in: textView.string)
+            applyHiddenRanges(effectiveHiddenRanges, to: textView, fullReset: false)
+
             if preserveSelection {
                 textView.setSelectedRange(clampedRange(previousSelection, maxLength: (textView.string as NSString).length))
             }
@@ -151,14 +173,51 @@ struct MarkdownTextView: NSViewRepresentable {
             isApplyingStyle = false
         }
 
-        private func applyHiddenRanges(_ hiddenRanges: [NSRange], to textView: MarkdownEditingTextView) {
+        private func reapplyHiddenRanges(to textView: MarkdownEditingTextView) {
+            isApplyingStyle = true
+            let previousSelection = textView.selectedRange()
+            let effectiveHiddenRanges = hiddenRangesExcludingCursorLine(
+                lastRender.hiddenRanges,
+                cursorLocation: previousSelection.location,
+                in: textView.string
+            )
+            applyHiddenRanges(effectiveHiddenRanges, to: textView, fullReset: true)
+            textView.setSelectedRange(previousSelection)
+            refreshTypingAttributes(for: textView)
+            isApplyingStyle = false
+        }
+
+        private func hiddenRangesExcludingCursorLine(
+            _ ranges: [NSRange],
+            cursorLocation: Int,
+            in source: String
+        ) -> [NSRange] {
+            let nsSource = source as NSString
+            guard nsSource.length > 0, cursorLocation >= 0, cursorLocation != NSNotFound else { return ranges }
+            let clampedCursor = min(cursorLocation, max(0, nsSource.length - 1))
+            let cursorLineRange = nsSource.lineRange(for: NSRange(location: clampedCursor, length: 0))
+            return ranges.filter { NSIntersectionRange($0, cursorLineRange).length == 0 }
+        }
+
+        private func updateCursorLineRange(cursorLocation: Int, in source: String) {
+            let nsSource = source as NSString
+            guard nsSource.length > 0, cursorLocation >= 0, cursorLocation != NSNotFound else {
+                lastCursorLineRange = NSRange(location: NSNotFound, length: 0)
+                return
+            }
+            let clampedCursor = min(cursorLocation, max(0, nsSource.length - 1))
+            lastCursorLineRange = nsSource.lineRange(for: NSRange(location: clampedCursor, length: 0))
+        }
+
+        private func applyHiddenRanges(_ hiddenRanges: [NSRange], to textView: MarkdownEditingTextView, fullReset: Bool) {
             guard let layoutManager = textView.layoutManager else { return }
 
             let textLength = (textView.string as NSString).length
+            guard textLength > 0 else { return }
             let fullCharacterRange = NSRange(location: 0, length: textLength)
             let fullGlyphRange = layoutManager.glyphRange(forCharacterRange: fullCharacterRange, actualCharacterRange: nil)
 
-            if fullGlyphRange.location != NSNotFound {
+            if fullReset, fullGlyphRange.location != NSNotFound {
                 for glyphIndex in fullGlyphRange.location..<NSMaxRange(fullGlyphRange) {
                     if layoutManager.notShownAttribute(forGlyphAt: glyphIndex) {
                         layoutManager.setNotShownAttribute(false, forGlyphAt: glyphIndex)
@@ -312,7 +371,7 @@ fileprivate enum MarkdownInlineStyler {
 
             let level = max(1, min(6, match.range(at: 1).length))
             let markerRange = NSRange(location: match.range.location, length: match.range(at: 1).length + match.range(at: 2).length)
-            hideMarkerRange(markerRange, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(markerRange, in: attributed, hiddenRanges: &hiddenRanges)
             attributed.addAttributes(
                 headingAttributes(level: level, size: sizes[level - 1]),
                 range: match.range(at: 3)
@@ -330,7 +389,7 @@ fileprivate enum MarkdownInlineStyler {
             guard !intersectsProtectedRange(match.range, protectedRanges: protectedRanges) else { continue }
 
             let markerRange = NSRange(location: match.range.location, length: match.range(at: 1).length + match.range(at: 2).length)
-            hideMarkerRange(markerRange, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(markerRange, in: attributed, hiddenRanges: &hiddenRanges)
             attributed.addAttributes(
                 [
                     .font: NSFont.systemFont(ofSize: 16, weight: .medium),
@@ -376,8 +435,8 @@ fileprivate enum MarkdownInlineStyler {
             let contentRange = match.range(at: 1)
             let leadingMarkerRange = NSRange(location: match.range.location, length: markerLength)
             let trailingMarkerRange = NSRange(location: match.range.location + match.range.length - markerLength, length: markerLength)
-            hideMarkerRange(leadingMarkerRange, hiddenRanges: &hiddenRanges)
-            hideMarkerRange(trailingMarkerRange, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(leadingMarkerRange, in: attributed, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(trailingMarkerRange, in: attributed, hiddenRanges: &hiddenRanges)
             attributed.addAttributes([.font: font, .foregroundColor: NSColor.labelColor], range: contentRange)
         }
     }
@@ -392,8 +451,8 @@ fileprivate enum MarkdownInlineStyler {
             guard !intersectsProtectedRange(match.range, protectedRanges: protectedRanges) else { continue }
 
             let contentRange = match.range(at: 1)
-            hideMarkerRange(NSRange(location: match.range.location, length: 2), hiddenRanges: &hiddenRanges)
-            hideMarkerRange(NSRange(location: match.range.location + match.range.length - 2, length: 2), hiddenRanges: &hiddenRanges)
+            hideMarkerRange(NSRange(location: match.range.location, length: 2), in: attributed, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(NSRange(location: match.range.location + match.range.length - 2, length: 2), in: attributed, hiddenRanges: &hiddenRanges)
             attributed.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: contentRange)
         }
     }
@@ -423,8 +482,8 @@ fileprivate enum MarkdownInlineStyler {
                 location: afterTextLocation,
                 length: fullRange.location + fullRange.length - afterTextLocation
             )
-            hideMarkerRange(openingRange, hiddenRanges: &hiddenRanges)
-            hideMarkerRange(trailingRange, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(openingRange, in: attributed, hiddenRanges: &hiddenRanges)
+            hideMarkerRange(trailingRange, in: attributed, hiddenRanges: &hiddenRanges)
         }
     }
 
@@ -445,10 +504,11 @@ fileprivate enum MarkdownInlineStyler {
                 ],
                 range: match.range
             )
-            hideMarkerRange(NSRange(location: match.range.location, length: min(3, match.range.length)), hiddenRanges: &hiddenRanges)
+            hideMarkerRange(NSRange(location: match.range.location, length: min(3, match.range.length)), in: attributed, hiddenRanges: &hiddenRanges)
             if match.range.length >= 6 {
                 hideMarkerRange(
                     NSRange(location: match.range.location + match.range.length - 3, length: 3),
+                    in: attributed,
                     hiddenRanges: &hiddenRanges
                 )
             }
@@ -466,9 +526,10 @@ fileprivate enum MarkdownInlineStyler {
                 ],
                 range: match.range
             )
-            hideMarkerRange(NSRange(location: match.range.location, length: 1), hiddenRanges: &hiddenRanges)
+            hideMarkerRange(NSRange(location: match.range.location, length: 1), in: attributed, hiddenRanges: &hiddenRanges)
             hideMarkerRange(
                 NSRange(location: match.range.location + match.range.length - 1, length: 1),
+                in: attributed,
                 hiddenRanges: &hiddenRanges
             )
         }
@@ -571,9 +632,13 @@ fileprivate enum MarkdownInlineStyler {
         return typingAttributes
     }
 
-    private static func hideMarkerRange(_ range: NSRange, hiddenRanges: inout [NSRange]) {
+    /// Marks a range as a markdown marker: dims it and records it for potential hiding.
+    /// On lines where the cursor is active, markers stay visible but dimmed.
+    /// On other lines, markers are hidden entirely.
+    private static func hideMarkerRange(_ range: NSRange, in attributed: NSMutableAttributedString, hiddenRanges: inout [NSRange]) {
         guard range.location != NSNotFound, range.length > 0 else { return }
         hiddenRanges.append(range)
+        attributed.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: range)
     }
 
     private static func mergedRanges(_ ranges: [NSRange]) -> [NSRange] {

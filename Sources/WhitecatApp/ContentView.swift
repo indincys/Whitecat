@@ -91,11 +91,7 @@ struct ContentView: View {
                     noteListRow(note)
                         .tag(note.id as UUID?)
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            model.changeSelection(to: note.id)
-                        }
                         .onTapGesture(count: 2) {
-                            model.changeSelection(to: note.id)
                             openWindow(id: WhitecatApp.detachedNoteWindowID, value: note.id)
                         }
                 }
@@ -169,6 +165,7 @@ struct ContentView: View {
         Group {
             if let note = model.selectedNote {
                 NoteEditorView(noteID: note.id, focusToken: editorFocusToken)
+                .id(note.id)
                 .background(WhitecatTheme.detailPaneBackground())
             } else {
                 ContentUnavailableView("没有选中的笔记", systemImage: "square.and.pencil")
