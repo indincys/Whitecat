@@ -12,28 +12,15 @@ final class AppModel: ObservableObject {
     @Published var selectedScope: LibrarySidebarScope = .all
     @Published var selectedNoteID: UUID?
     @Published var searchText: String = ""
-    @Published var updateState: UpdateState = .idle
     @Published var storageLocationDescription: String = "正在读取..."
     @Published var storageStatusDescription: String = "正在检测 iCloud 状态..."
     @Published private(set) var isUsingICloudStorage: Bool = false
     @Published var lastOperationMessage: String?
 
-    enum UpdateState: Equatable {
-        case idle
-        case checking
-        case installing(String)
-        case upToDate
-        case available(UpdateRelease)
-        case failed(String)
-    }
-
     private let persistence: LibraryPersistence
     private let organizer: NoteOrganizer
     private let secretStore: SecretStoring
-    private let updateChecker: ManualUpdateChecker
-    private let sparkleUpdateDriver: SparkleUpdateDriver?
-    private let unsignedUpdateInstaller: UnsignedUpdateInstaller
-    private let updateInstallationMode: UpdateInstallationMode
+    let sparkleUpdateDriver: SparkleUpdateDriver
     private var autosaveTask: Task<Void, Never>?
     private var organizationTasks: [UUID: Task<Void, Never>] = [:]
     private var queuedOrganizationRequests: [UUID: Bool] = [:]
@@ -49,18 +36,12 @@ final class AppModel: ObservableObject {
         persistence: LibraryPersistence = LibraryPersistence(),
         organizer: NoteOrganizer,
         secretStore: SecretStoring,
-        updateChecker: ManualUpdateChecker = ManualUpdateChecker(),
-        sparkleUpdateDriver: SparkleUpdateDriver? = nil,
-        unsignedUpdateInstaller: UnsignedUpdateInstaller = UnsignedUpdateInstaller(),
-        updateInstallationMode: UpdateInstallationMode = UpdateInstallationInspector.current()
+        sparkleUpdateDriver: SparkleUpdateDriver = SparkleUpdateDriver()
     ) {
         self.persistence = persistence
         self.organizer = organizer
         self.secretStore = secretStore
-        self.updateChecker = updateChecker
         self.sparkleUpdateDriver = sparkleUpdateDriver
-        self.unsignedUpdateInstaller = unsignedUpdateInstaller
-        self.updateInstallationMode = updateInstallationMode
     }
 
     var filteredNotes: [NoteRecord] {
@@ -87,19 +68,6 @@ final class AppModel: ObservableObject {
 
     var activeProfile: AIProfileRecord? {
         snapshot.activeProfile()
-    }
-
-    var supportsInAppUpdateInstallation: Bool {
-        updateInstallationMode.supportsInAppInstallation
-    }
-
-    var updateInstallationMessage: String? {
-        switch updateInstallationMode {
-        case let .selfManaged(reason), let .downloadOnly(reason):
-            return reason
-        case .sparkle:
-            return nil
-        }
     }
 
     var appearancePreference: AppAppearancePreference {
@@ -340,92 +308,13 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func checkForUpdates() async {
-        let feedURL = snapshot.preferences.appcastURL
-        let checker = updateChecker
-        let currentVersion = currentVersionString
-        updateState = .checking
-
-        if updateInstallationMode.usesSparkle,
-           let sparkleUpdateDriver,
-           !feedURL.isEmpty {
-            sparkleUpdateDriver.configure(
-                feedURLString: feedURL,
-                automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
-            )
-            sparkleUpdateDriver.checkForUpdates()
-            lastOperationMessage = "已发起 Sparkle 更新检查。"
-            updateState = .idle
-            return
-        }
-
-        do {
-            let result = try await checker.check(
-                currentBuildVersion: currentBuildVersion,
-                currentShortVersion: currentVersion,
-                feedURLString: feedURL
-            )
-            switch result {
-            case .noUpdate:
-                updateState = .upToDate
-                if let updateInstallationMessage {
-                    lastOperationMessage = updateInstallationMessage
-                }
-            case let .updateAvailable(release):
-                updateState = .available(release)
-                if let updateInstallationMessage {
-                    lastOperationMessage = updateInstallationMessage
-                }
-            }
-        } catch {
-            updateState = .failed(error.localizedDescription)
-        }
-    }
-
-    func openUpdateDownload(_ release: UpdateRelease) {
-        do {
-            let url = try UpdateURLValidator.validatedDownloadURL(release.downloadURL)
-            NSWorkspace.shared.open(url)
-        } catch {
-            lastOperationMessage = error.localizedDescription
-        }
-    }
-
-    func installUpdate(_ release: UpdateRelease) async {
-        switch updateInstallationMode {
-        case .sparkle:
-            updateState = .checking
-            if let sparkleUpdateDriver {
-                sparkleUpdateDriver.configure(
-                    feedURLString: snapshot.preferences.appcastURL,
-                    automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
-                )
-                sparkleUpdateDriver.checkForUpdates()
-                lastOperationMessage = "已发起 Sparkle 安装更新。"
-                updateState = .idle
-            } else {
-                updateState = .failed("当前构建缺少 Sparkle 更新驱动。")
-            }
-
-        case .selfManaged:
-            updateState = .installing("正在下载并校验更新...")
-            do {
-                try await unsignedUpdateInstaller.install(release: release)
-                lastOperationMessage = "更新包已准备完成，应用即将退出并安装新版本。"
-                updateState = .installing("正在安装更新...")
-                NSApp.terminate(nil)
-            } catch {
-                updateState = .failed(error.localizedDescription)
-            }
-
-        case .downloadOnly:
-            openUpdateDownload(release)
-            updateState = .idle
-        }
+    func checkForUpdates() {
+        sparkleUpdateDriver.checkForUpdates()
     }
 
     func openReleasePage() {
-        guard let url = UpdateURLValidator.sanitizedBrowserURL(from: snapshot.preferences.releasePageURL) else {
+        let raw = snapshot.preferences.releasePageURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: raw), url.scheme?.lowercased() == "https" else {
             lastOperationMessage = "Releases 页面地址无效，必须使用 HTTPS。"
             return
         }
@@ -496,16 +385,8 @@ final class AppModel: ObservableObject {
         snapshot.activeProfile()
     }
 
-    private var currentVersionString: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-    }
-
-    private var currentBuildVersion: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? currentVersionString
-    }
-
     private func configureSparkleUpdater() {
-        sparkleUpdateDriver?.configure(
+        sparkleUpdateDriver.configure(
             feedURLString: snapshot.preferences.appcastURL,
             automaticallyChecks: snapshot.preferences.checksForUpdatesAutomatically
         )

@@ -34,5 +34,11 @@
 	<string>https://indincys.github.io/Whitecat/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>oLcGi5z3SPncXzYBFi+y6AkABIdlG6F9sQ89A2hIMhg=</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUShowReleaseNotes</key>
+	<true/>
 </dict>
 </plist>

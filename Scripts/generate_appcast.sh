@@ -8,6 +8,15 @@ RELEASE_NOTES_URL_PREFIX="${RELEASE_NOTES_URL_PREFIX:-}"
 FULL_RELEASE_NOTES_URL="${FULL_RELEASE_NOTES_URL:-}"
 PRIVATE_ED_KEY="${PRIVATE_ED_KEY:-}"
 PRIVATE_ED_KEY_PATH="${PRIVATE_ED_KEY_PATH:-}"
+KEYCHAIN_SERVICE="Whitecat Sparkle EdDSA"
+KEYCHAIN_ACCOUNT="sparkle-eddsa-private-key"
+
+# Try Keychain if no key provided via env
+if [[ -z "$PRIVATE_ED_KEY" && -z "$PRIVATE_ED_KEY_PATH" ]]; then
+  if security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1; then
+    PRIVATE_ED_KEY="$(security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w)"
+  fi
+fi
 APPCAST_TOOL="${APPCAST_TOOL:-$ROOT_DIR/Vendor/SparkleTools/generate_appcast}"
 STAGING_DIR="$(mktemp -d /tmp/whitecat-appcast.XXXXXX)"
 

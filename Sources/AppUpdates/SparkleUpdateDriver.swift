@@ -1,11 +1,13 @@
 #if canImport(Sparkle)
+import Combine
 import Foundation
 import Sparkle
+import SwiftUI
 
 @MainActor
 public final class SparkleUpdateDriver: NSObject {
     private let delegateProxy = DelegateProxy()
-    private let controller: SPUStandardUpdaterController
+    let controller: SPUStandardUpdaterController
 
     public override init() {
         controller = SPUStandardUpdaterController(updaterDelegate: delegateProxy, userDriverDelegate: nil)
@@ -29,8 +31,34 @@ public final class SparkleUpdateDriver: NSObject {
         }
     }
 }
+
+public final class CheckForUpdatesViewModel: ObservableObject {
+    @Published public var canCheckForUpdates = false
+
+    public init(updater: SPUUpdater) {
+        updater.publisher(for: \.canCheckForUpdates)
+            .assign(to: &$canCheckForUpdates)
+    }
+}
+
+public struct CheckForUpdatesView: View {
+    @ObservedObject private var viewModel: CheckForUpdatesViewModel
+    private let updater: SPUUpdater
+
+    public init(driver: SparkleUpdateDriver) {
+        let updater = driver.controller.updater
+        self.updater = updater
+        self.viewModel = CheckForUpdatesViewModel(updater: updater)
+    }
+
+    public var body: some View {
+        Button("检查更新…", action: updater.checkForUpdates)
+            .disabled(!viewModel.canCheckForUpdates)
+    }
+}
 #else
 import Foundation
+import SwiftUI
 
 @MainActor
 public final class SparkleUpdateDriver {
@@ -41,5 +69,14 @@ public final class SparkleUpdateDriver {
     }
 
     public func checkForUpdates() {}
+}
+
+public struct CheckForUpdatesView: View {
+    public init(driver: SparkleUpdateDriver) {}
+
+    public var body: some View {
+        Button("检查更新…") {}
+            .disabled(true)
+    }
 }
 #endif

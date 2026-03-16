@@ -34,6 +34,7 @@ Environment:
   GITHUB_TOKEN         Optional. Used for GitHub API calls if set.
   PRIVATE_ED_KEY       Optional. Sparkle private key content.
   PRIVATE_ED_KEY_PATH  Optional. Path to the Sparkle private key file. Defaults to ~/.config/whitecat/sparkle_private_key if present.
+  SPARKLE_KEY_KEYCHAIN Optional. Set to 1 to read the private key from macOS login Keychain (default: try Keychain first).
   RELEASE_NOTES_FILE   Optional. Text file with one change per line.
   TEAM_BUNDLE_PREFIX   Required for signed releases unless ENTITLEMENTS_PATH is set.
   ENTITLEMENTS_PATH    Optional. Overrides the generated entitlements path.
@@ -74,8 +75,19 @@ DEFAULT_PRIVATE_KEY_PATH="${HOME}/.config/whitecat/sparkle_private_key"
 GH_USER=""
 GH_PASS=""
 
-if [[ -z "${PRIVATE_ED_KEY:-}" && -z "${PRIVATE_ED_KEY_PATH:-}" && -f "$DEFAULT_PRIVATE_KEY_PATH" ]]; then
-  PRIVATE_ED_KEY_PATH="$DEFAULT_PRIVATE_KEY_PATH"
+KEYCHAIN_SERVICE="Whitecat Sparkle EdDSA"
+KEYCHAIN_ACCOUNT="sparkle-eddsa-private-key"
+SPARKLE_KEY_KEYCHAIN="${SPARKLE_KEY_KEYCHAIN:-0}"
+
+# Key resolution order: env var > env path > Keychain > default file
+if [[ -z "${PRIVATE_ED_KEY:-}" && -z "${PRIVATE_ED_KEY_PATH:-}" ]]; then
+  if security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" >/dev/null 2>&1; then
+    PRIVATE_ED_KEY="$(security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w)"
+    SPARKLE_KEY_KEYCHAIN=1
+    echo "Using Sparkle private key from macOS login Keychain."
+  elif [[ -f "$DEFAULT_PRIVATE_KEY_PATH" ]]; then
+    PRIVATE_ED_KEY_PATH="$DEFAULT_PRIVATE_KEY_PATH"
+  fi
 fi
 
 if [[ ! "$VERSION" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
@@ -377,9 +389,12 @@ Dry run complete.
 Version: $VERSION
 Build: $BUILD_NUMBER
 Tag: $TAG_NAME
-ZIP: $ZIP_PATH
-DMG: $DMG_PATH
-Appcast: $DOCS_APPCAST_PATH
+
+Files to upload:
+  ZIP:     $ZIP_PATH
+  DMG:     $DMG_PATH
+  Appcast: $DOCS_APPCAST_PATH
+  Notes:   $RELEASES_DIR/${APP_NAME}-${VERSION}.txt
 EOF
   exit 0
 fi
@@ -393,10 +408,14 @@ git push origin main
 
 cat <<EOF
 Release published.
-Version: $VERSION
-Build: $BUILD_NUMBER
-Tag: $TAG_NAME
-Release: $RELEASE_URL
-ZIP SHA-256: $ZIP_SHA
-DMG SHA-256: $DMG_SHA
+Version:     $VERSION
+Build:       $BUILD_NUMBER
+Tag:         $TAG_NAME
+Release:     $RELEASE_URL
+
+Uploaded files:
+  ZIP:       $ZIP_PATH  (SHA-256: $ZIP_SHA)
+  DMG:       $DMG_PATH  (SHA-256: $DMG_SHA)
+  Appcast:   $DOCS_APPCAST_PATH
+  Notes:     $RELEASES_DIR/${APP_NAME}-${VERSION}.txt
 EOF

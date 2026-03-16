@@ -1,5 +1,4 @@
 import AIOrchestrator
-import AppUpdates
 import NotesCore
 import SwiftUI
 
@@ -218,9 +217,7 @@ struct SettingsView: View {
                     )
                 }
                 Button("检查更新") {
-                    Task {
-                        await model.checkForUpdates()
-                    }
+                    model.checkForUpdates()
                 }
                 Button("打开 Releases 页面") {
                     model.openReleasePage()
@@ -228,45 +225,8 @@ struct SettingsView: View {
                 .disabled(releasePageURLDraft.isEmpty)
             }
 
-            if let message = model.updateInstallationMessage {
-                Label(message, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-            }
-
-            switch model.updateState {
-            case .idle:
-                Text("尚未检查更新。")
-                    .foregroundStyle(.secondary)
-            case .checking:
-                ProgressView("正在读取更新源...")
-            case let .installing(message):
-                ProgressView(message)
-            case .upToDate:
-                Label("当前已是最新版本。", systemImage: "checkmark.seal")
-                    .foregroundStyle(.green)
-            case let .available(release):
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("发现新版本 \(release.shortVersion)", systemImage: "arrow.down.circle.fill")
-                        .foregroundStyle(.orange)
-                    if !model.supportsInAppUpdateInstallation {
-                        Text("当前构建只支持跳转下载。")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Button(model.supportsInAppUpdateInstallation ? "下载并安装更新" : "下载更新") {
-                        Task {
-                            if model.supportsInAppUpdateInstallation {
-                                await model.installUpdate(release)
-                            } else {
-                                model.openUpdateDownload(release)
-                            }
-                        }
-                    }
-                }
-            case let .failed(message):
-                Text(message)
-                    .foregroundStyle(.red)
-            }
+            Text("更新由 Sparkle 管理，检查更新后会自动弹出更新对话框。")
+                .foregroundStyle(.secondary)
         }
     }
 

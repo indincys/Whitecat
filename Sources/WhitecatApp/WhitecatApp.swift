@@ -8,9 +8,7 @@ struct WhitecatApp: App {
 
     @StateObject private var model = AppModel(
         organizer: NoteOrganizer(secretStore: KeychainSecretStore()),
-        secretStore: KeychainSecretStore(),
-        updateChecker: ManualUpdateChecker(),
-        sparkleUpdateDriver: SparkleUpdateDriver()
+        secretStore: KeychainSecretStore()
     )
     @StateObject private var quickCaptureController = QuickCaptureController()
 
@@ -45,6 +43,9 @@ struct WhitecatApp: App {
         .defaultSize(width: 920, height: 760)
 
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(driver: model.sparkleUpdateDriver)
+            }
             CommandMenu("Capture") {
                 Button("快速收集") {
                     quickCaptureController.show()
